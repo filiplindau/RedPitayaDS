@@ -4,7 +4,7 @@
 #
 # file :        RedPitayaDS.py
 #
-# description : Python source for the RedPitayaDS and its commands. 
+# description : Python source for the RedPitayaDS and its commands.
 #                The class is derived from Device. It represents the
 #                CORBA servant object which will be accessed from the
 #                network. All commands which can be executed on the
@@ -40,7 +40,7 @@ import numpy as np
 from socket import gethostname
 import Queue
 
-        
+
 class DeviceCommand:
     def __init__(self, command, data=None):
         self.command = command
@@ -84,10 +84,10 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #    Device initialization
 #------------------------------------------------------------------
     def init_device(self):
-        self.info_stream(''.join(("In ", self.get_name(), "::init_device()")))        
+        self.info_stream(''.join(("In ", self.get_name(), "::init_device()")))
         self.set_state(PyTango.DevState.UNKNOWN)
         self.get_device_properties(self.get_device_class())
-                
+
         try:
             self.stopStateThread()
             self.oscilloscope.close()
@@ -95,15 +95,15 @@ class RedPitayaDS(PyTango.Device_4Impl):
             pass
 
         self.oscilloscope = None
-        
+
         self.measurementStrings = ['max(w1)', 'max(w2)', 'w1.sum()', 'w2.sum()']
         self.measurementData = np.array([0.0, 0.0, 0.0, 0.0])
         self.redPitayaData = rpc.RedPitayaData()
         self.stateThread = threading.Thread()
         threading.Thread.__init__(self.stateThread, target=self.stateHandlerDispatcher)
-        
+
         self.commandQueue = Queue.Queue(100)
-        
+
         self.stateHandlerDict = {PyTango.DevState.ON: self.onHandler,
                                 PyTango.DevState.STANDBY: self.standbyHandler,
                                 PyTango.DevState.ALARM: self.onHandler,
@@ -113,9 +113,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
                                 PyTango.DevState.OFF: self.offHandler}
 
         self.stopStateThreadFlag = False
-        
+
         self.stateThread.start()
-        
+
 
 #------------------------------------------------------------------
 #    Always excuted hook method
@@ -139,9 +139,11 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def unknownHandler(self, prevState):
         self.info_stream('Entering unknownHandler')
         connectionTimeout = 1.0
-        
+
+        self.stopWatchdog()
+
         self.oscilloscopeData = None
-        try:                
+        try:
             self.oscilloscope = rpc.RedPitaya_control(self.IPaddress, self.Port)
             self.set_state(PyTango.DevState.INIT)
             self.info_stream('... connected')
@@ -150,14 +152,14 @@ class RedPitayaDS(PyTango.Device_4Impl):
             self.set_state(PyTango.DevState.UNKNOWN)
             self.set_status(''.join(('Could not create oscilloscope object.', str(e))))
 
- 
+
         while self.get_state() == PyTango.DevState.UNKNOWN:
             self.info_stream('Trying to connect...')
-            try:         
-                self.oscilloscope.close()  
+            try:
+                self.oscilloscope.close()
             except:
                 pass
-            try:     
+            try:
                 self.oscilloscope = rpc.RedPitaya_control(self.IPaddress, self.Port)
                 self.set_state(PyTango.DevState.INIT)
                 self.info_stream('... connected')
@@ -175,9 +177,10 @@ class RedPitayaDS(PyTango.Device_4Impl):
         self.set_status(s_status)
         self.info_stream(s_status)
         initTimeout = 1.0  # Retry time interval
-        
+
         exitInitFlag = False  # Flag to see if we can leave the loop
-        
+
+
         while exitInitFlag == False:
             exitInitFlag = True  # Preset in case nothing goes wrong
 
@@ -198,161 +201,190 @@ class RedPitayaDS(PyTango.Device_4Impl):
             self.set_status(s_status)
             self.info_stream(s)
             attrs = self.get_device_attr()
-            
-            apa = attrs.get_w_attr_by_name('triggermode')
-            try:
-                print 'triggermode wAttr:', repr(apa.get_write_value(extract_as=PyTango.ExtractAs.Numpy))
-                print type(apa.get_write_value())
-                print 'Length: ', len(apa.get_write_value())
-                print apa.get_write_value_length()
-            except Exception, e:
-                self.error_stream(str(e))
-            
-            try:
-                
-                self.redPitayaData.triggerLevel = attrs.get_w_attr_by_name('TriggerLevel').get_write_value()                
-                s = ''.join(('Trigger level ', str(self.redPitayaData.triggerLevel), ' V'))
-                self.info_stream(s)
-            except Exception, e:
-                self.error_stream('Could not retrieve attribute Trigger level, using default value')
-            try:
-                self.oscilloscope.setTriggerLevel(self.redPitayaData.triggerLevel)
-            except Exception, e:
-                exitInitFlag = False
-                self.set_status(''.join(('Could not set trigger level', str(e))))
-                self.error_stream(''.join(('Could not set trigger level', str(e))))
-                continue
 
-            s = 'Setting trigger source\n'
-            s_status = ''.join((s_status, s))
-            self.set_status(s_status)
-            self.info_stream(s)
-#            try:
-#                self.redPitayaData.triggerSource = attrs.get_w_attr_by_name('triggerSource').get_write_value()                
-#                s = ''.join(('trigger source ', str(self.redPitayaData.triggerSource), ' '))
-#                self.info_stream(s)
-#                if self.redPitayaData.triggerSource.lower() not in ['channel1', 'channel2', 'external']:
-#                    self.redPitayaData.triggerSource = 'channel1'
-#            except Exception, e:
-#                self.error_stream('Could not retrieve attribute trigger source, using default value')
-            self.info_stream('Retrieved trigger source')
-            try:
-                self.oscilloscope.setTriggerSource(self.redPitayaData.triggerSource)
-            except Exception, e:
-                exitInitFlag = False
-                self.set_status(''.join(('Could not set trigger source', str(e))))
-                self.error_stream(''.join(('Could not set trigger source', str(e))))
-                continue
+            attrNbr = attrs.get_attr_nb()
+            self.info_stream(''.join(('Found ', str(attrNbr), ' attributes.')))
+            attrList = attrs.get_attribute_list()
+            self.info_stream(str(type(attrList)))
+            for k in range(attrNbr):
+                attr = attrs.get_attr_by_ind(k)
+                self.info_stream(attr.get_name())
+                self.info_stream(''.join(('Associated write: ', attr.get_assoc_name())))
+                self.info_stream(''.join(('Associated index: ', str(attr.get_assoc_ind()))))
+                if attr.get_assoc_name() != 'None':
+                    wAttr = attrs.get_w_attr_by_ind(attr.get_assoc_ind())
+                    self.info_stream(''.join((wAttr.get_name())))
+#                     w = wAttr.get_write_value()
+#                     self.info_stream(''.join((wAttr.get_name(),': ', str(w))))
 
-            s = 'Setting trigger mode\n'
-            s_status = ''.join((s_status, s))
-            self.set_status(s_status)
-            self.info_stream(s)
-            try:
-                self.redPitayaData.triggerMode = attrs.get_w_attr_by_name('triggerMode').get_write_value()                
-                s = ''.join(('trigger mode ', str(self.redPitayaData.triggerMode), ' '))
-                self.info_stream(s)
-                if self.redPitayaData.triggerMode.lower() not in ['normal', 'auto', 'single']:
-                    self.redPitayaData.triggerMode = 'auto'
-            except Exception, e:
-                self.error_stream('Could not retrieve attribute trigger mode, using default value')
-            try:
-                self.oscilloscope.setTriggerMode(self.redPitayaData.triggerMode)
-            except Exception, e:
-                exitInitFlag = False
-                self.set_status(''.join(('Could not set trigger mode', str(e))))
-                self.error_stream(''.join(('Could not set trigger mode', str(e))))
-                continue
-            
-            s = 'Setting trigger delay\n'
-            s_status = ''.join((s_status, s))
-            self.set_status(s_status)
-            self.info_stream(s)
-            try:
-                self.redPitayaData.triggerDelay = attrs.get_w_attr_by_name('triggerDelay').get_write_value()                
-                s = ''.join(('trigger delay ', str(self.redPitayaData.triggerDelay), ' s'))
-                self.info_stream(s)
-            except Exception, e:
-                self.error_stream('Could not retrieve attribute trigger delay, using default value')
-            try:
-                self.oscilloscope.setTriggerDelay(self.redPitayaData.triggerDelay)
-            except Exception, e:
-                exitInitFlag = False
-                self.set_status(''.join(('Could not set trigger delay', str(e))))
-                self.error_stream(''.join(('Could not set trigger delay', str(e))))
-                continue
-            
-            s = 'Setting record length\n'
-            s_status = ''.join((s_status, s))
-            self.set_status(s_status)
-            self.info_stream(s)
-            try:
-                self.redPitayaData.recordLength = attrs.get_w_attr_by_name('recordLength').get_write_value()                
-                s = ''.join(('record length ', str(self.redPitayaData.recordLength), ' '))
-                self.info_stream(s)
-            except Exception, e:
-                self.error_stream('Could not retrieve attribute record length, using default value')
-            try:
-                self.oscilloscope.setRecordLength(self.redPitayaData.recordLength)
-            except Exception, e:
-                exitInitFlag = False
-                self.set_status(''.join(('Could not set record length', str(e))))
-                self.error_stream(''.join(('Could not set record length', str(e))))
-                continue
-            
-            s = 'Setting samplerate\n'
-            s_status = ''.join((s_status, s))
-            self.set_status(s_status)
-            self.info_stream(s)
-            try:
-                sampleRate = attrs.get_w_attr_by_name('SampleRate').get_write_value()                
-                s = ''.join(('Samplerate ', str(sampleRate), ' Sps'))
-                self.info_stream(s)
-            except Exception, e:
-                self.error_stream('Could not retrieve attribute samplerate, using default value')
-            try:
-                decArray = np.array([1, 8, 64, 1024, 8192, 16384])
-                sampleRateArray = 125e6 / decArray
-                sampleIndex = max(0, np.argmin(sampleRateArray > sampleRate) - 1)
-                self.oscilloscope.setDecimationFactor(sampleIndex)
-            except Exception, e:
-                exitInitFlag = False
-                self.set_status(''.join(('Could not set samplerate', str(e))))
-                self.error_stream(''.join(('Could not set samplerate', str(e))))
-                continue
-            
-            
-            
+
+#             apa = attrs.get_w_attr_by_name('triggermode')
+#             try:
+#                 print 'triggermode wAttr:', repr(apa.get_write_value(extract_as=PyTango.ExtractAs.Numpy))
+#                 print type(apa.get_write_value())
+#                 print 'Length: ', len(apa.get_write_value())
+#                 print apa.get_write_value_length()
+#             except Exception, e:
+#                 self.error_stream(str(e))
+#
+#             try:
+#
+#                 self.redPitayaData.triggerLevel = attrs.get_w_attr_by_name('TriggerLevel').get_write_value()
+#                 s = ''.join(('Trigger level ', str(self.redPitayaData.triggerLevel), ' V'))
+#                 self.info_stream(s)
+#             except Exception, e:
+#                 self.error_stream('Could not retrieve attribute Trigger level, using default value')
+#             try:
+#                 self.oscilloscope.setTriggerLevel(self.redPitayaData.triggerLevel)
+#             except Exception, e:
+#                 exitInitFlag = False
+#                 self.set_status(''.join(('Could not set trigger level', str(e))))
+#                 self.error_stream(''.join(('Could not set trigger level', str(e))))
+#                 continue
+#
+#             s = 'Setting trigger source\n'
+#             s_status = ''.join((s_status, s))
+#             self.set_status(s_status)
+#             self.info_stream(s)
+# #            try:
+# #                self.redPitayaData.triggerSource = attrs.get_w_attr_by_name('triggerSource').get_write_value()
+# #                s = ''.join(('trigger source ', str(self.redPitayaData.triggerSource), ' '))
+# #                self.info_stream(s)
+# #                if self.redPitayaData.triggerSource.lower() not in ['channel1', 'channel2', 'external']:
+# #                    self.redPitayaData.triggerSource = 'channel1'
+# #            except Exception, e:
+# #                self.error_stream('Could not retrieve attribute trigger source, using default value')
+#             self.info_stream('Retrieved trigger source')
+#             try:
+#                 self.oscilloscope.setTriggerSource(self.redPitayaData.triggerSource)
+#             except Exception, e:
+#                 exitInitFlag = False
+#                 self.set_status(''.join(('Could not set trigger source', str(e))))
+#                 self.error_stream(''.join(('Could not set trigger source', str(e))))
+#                 continue
+#
+#             s = 'Setting trigger mode\n'
+#             s_status = ''.join((s_status, s))
+#             self.set_status(s_status)
+#             self.info_stream(s)
+#             try:
+#                 self.redPitayaData.triggerMode = attrs.get_w_attr_by_name('triggerMode').get_write_value()
+#                 s = ''.join(('trigger mode ', str(self.redPitayaData.triggerMode), ' '))
+#                 self.info_stream(s)
+#                 if self.redPitayaData.triggerMode.lower() not in ['normal', 'auto', 'single']:
+#                     self.redPitayaData.triggerMode = 'auto'
+#             except Exception, e:
+#                 self.error_stream('Could not retrieve attribute trigger mode, using default value')
+#             try:
+#                 self.oscilloscope.setTriggerMode(self.redPitayaData.triggerMode)
+#             except Exception, e:
+#                 exitInitFlag = False
+#                 self.set_status(''.join(('Could not set trigger mode', str(e))))
+#                 self.error_stream(''.join(('Could not set trigger mode', str(e))))
+#                 continue
+#
+#             s = 'Setting trigger delay\n'
+#             s_status = ''.join((s_status, s))
+#             self.set_status(s_status)
+#             self.info_stream(s)
+#             try:
+#                 self.redPitayaData.triggerDelay = attrs.get_w_attr_by_name('triggerDelay').get_write_value()
+#                 s = ''.join(('trigger delay ', str(self.redPitayaData.triggerDelay), ' s'))
+#                 self.info_stream(s)
+#             except Exception, e:
+#                 self.error_stream('Could not retrieve attribute trigger delay, using default value')
+#             try:
+#                 self.oscilloscope.setTriggerDelay(self.redPitayaData.triggerDelay)
+#             except Exception, e:
+#                 exitInitFlag = False
+#                 self.set_status(''.join(('Could not set trigger delay', str(e))))
+#                 self.error_stream(''.join(('Could not set trigger delay', str(e))))
+#                 continue
+#
+#             s = 'Setting record length\n'
+#             s_status = ''.join((s_status, s))
+#             self.set_status(s_status)
+#             self.info_stream(s)
+#             try:
+#                 self.redPitayaData.recordLength = attrs.get_w_attr_by_name('recordLength').get_write_value()
+#                 s = ''.join(('record length ', str(self.redPitayaData.recordLength), ' '))
+#                 self.info_stream(s)
+#             except Exception, e:
+#                 self.error_stream('Could not retrieve attribute record length, using default value')
+#             try:
+#                 self.oscilloscope.setRecordLength(self.redPitayaData.recordLength)
+#             except Exception, e:
+#                 exitInitFlag = False
+#                 self.set_status(''.join(('Could not set record length', str(e))))
+#                 self.error_stream(''.join(('Could not set record length', str(e))))
+#                 continue
+#
+#             s = 'Setting samplerate\n'
+#             s_status = ''.join((s_status, s))
+#             self.set_status(s_status)
+#             self.info_stream(s)
+#             try:
+#                 sampleRate = attrs.get_w_attr_by_name('SampleRate').get_write_value()
+#                 s = ''.join(('Samplerate ', str(sampleRate), ' Sps'))
+#                 self.info_stream(s)
+#             except Exception, e:
+#                 self.error_stream('Could not retrieve attribute samplerate, using default value')
+#             try:
+#                 decArray = np.array([1, 8, 64, 1024, 8192, 16384])
+#                 sampleRateArray = 125e6 / decArray
+#                 sampleIndex = max(0, np.argmin(sampleRateArray > sampleRate) - 1)
+#                 self.oscilloscope.setDecimationFactor(sampleIndex)
+#             except Exception, e:
+#                 exitInitFlag = False
+#                 self.set_status(''.join(('Could not set samplerate', str(e))))
+#                 self.error_stream(''.join(('Could not set samplerate', str(e))))
+#                 continue
+
+
+
             self.set_status('Connected to oscilloscope, not acquiring')
             self.info_stream('Initialization finished.')
-            self.set_state(PyTango.DevState.STANDBY)
+            self.set_state(PyTango.DevState.ON)
+
+            # Start watchdog
+            self.resetWatchdog()
 
     def standbyHandler(self, prevState):
         self.info_stream('Entering standbyHandler')
         self.set_status('Connected to oscilloscope, not acquiring spectra')
+        keepAliveInterval = 0.25
+        t0 = time.clock()
+
         while self.stopStateThreadFlag == False:
             if self.get_state() != PyTango.DevState.STANDBY:
                 break
             # Check if any new commands arrived:
             self.checkCommands()
-            try:
-                self.oscilloscope.setTriggerLevel(self.oscilloscope.redPitayaData.triggerLevel)
-            except Exception, e:
-                self.set_state(PyTango.DevState.FAULT)
-                self.set_status('Error reading hardware.')
-                self.error_stream(''.join(('standbyHandler error: ', str(e))))
-                
+
+            # Try contacting the redpitaya at regular intervals to make sure it is alive
+            t = time.clock()
+            if t-t0 > keepAliveInterval:
+                t0 = t
+                try:
+                    self.oscilloscope.setTriggerLevel(self.oscilloscope.redPitayaData.triggerLevel)
+                    self.resetWatchdog()
+                except Exception, e:
+                    self.set_state(PyTango.DevState.FAULT)
+                    self.set_status('Error reading hardware.')
+                    self.error_stream(''.join(('standbyHandler error: ', str(e))))
+
             if self.get_state() != PyTango.DevState.STANDBY:
                 break
 
-            time.sleep(0.1)
+            # 50 ms sleep to stay responsive and still not bog down the computer
+            time.sleep(0.05)
 
     def onHandler(self, prevState):
         self.info_stream('Entering onHandler')
         self.set_status('Connected to oscilloscope, acquiring waveforms')
         handledStates = [PyTango.DevState.ON, PyTango.DevState.ALARM]
         self.openOscilloscope()
-        
+
         self.sleepTime = 0.01
         s = ''.join(('Sleeptime: ', str(self.sleepTime)))
         self.info_stream(s)
@@ -368,7 +400,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
             self.debug_stream('Entering check commands...')
             self.checkCommands()
             self.debug_stream('...check commands done')
-            
+
             # Check if we should break this loop and go to a new state handler:
             if self.get_state() not in handledStates:
                 self.info_stream(''.join(('2.. State ', str(self.get_state()), ' not in handled states')))
@@ -380,32 +412,40 @@ class RedPitayaDS(PyTango.Device_4Impl):
                     self.debug_stream('Acquiring waveform...')
                     # Update waveforms
                     try:
+                        triggerStatus = False
                         triggerStatus = self.oscilloscope.updateWaveforms()
+                        self.resetWatchdog()
                     except Exception, e:
-                        self.error_stream(str(e)) 
+                        self.error_stream(str(e))
                     self.debug_stream('Acquiring waveform done.')
                     newWaveformTimestamp = time.time()
+                    # Check if we got a fresh trigg event:
                     if triggerStatus == False:
+                        # No, so check if the delay is long (>0.3 s), the flag it as waiting for trigger
                         if newWaveformTimestamp - oldWaveformTimestamp > 0.3:
                             self.redPitayaData.triggerWait = True
                     else:
+                        # Yes, so flag it as not waiting for trigger and update timestamp
                         self.redPitayaData.triggerWait = False
                         oldWaveformTimestamp = newWaveformTimestamp
-                    
-                    # Calculate measurements
-                    self.debug_stream('Getting waveforms.')
-                    w1 = self.oscilloscope.getWaveform(1)
-                    self.redPitayaData.waveform1 = w1
-                    w2 = self.oscilloscope.getWaveform(2)
-                    self.redPitayaData.waveform2 = w2
-                    t = self.oscilloscope.redPitayaData.timevector
-                    self.redPitayaData.timevector = t
-                    self.debug_stream('Waveforms gotten.')
-                    
-                    for i, s in enumerate(self.measurementStrings):
-                        self.measurementData[i] = eval(s)
-                    self.debug_stream('Measurements calculated.')
-                    
+
+                        # Calculate measurements
+                        self.debug_stream('Getting waveforms.')
+                        w1 = self.oscilloscope.getWaveform(1)
+                        self.redPitayaData.waveform1 = w1
+                        w2 = self.oscilloscope.getWaveform(2)
+                        self.redPitayaData.waveform2 = w2
+                        t = self.oscilloscope.redPitayaData.timevector
+                        self.redPitayaData.timevector = t
+                        self.debug_stream('Waveforms gotten.')
+
+                        for i, s in enumerate(self.measurementStrings):
+                            try:
+                                self.measurementData[i] = eval(s)
+                            except Exception, e:
+                                self.measurementData[i] = None
+                        self.debug_stream('Measurements calculated.')
+
                 time.sleep(self.sleepTime)
 
             except Exception, e:
@@ -424,13 +464,13 @@ class RedPitayaDS(PyTango.Device_4Impl):
         responseTimeout = 0.5
         self.info_stream('Entering faultHandler.')
         self.set_status('Fault condition detected')
-            
+
         while self.get_state() == PyTango.DevState.FAULT:
             try:
                 self.oscilloscope.close()
                 time.sleep(1.5)
                 self.oscilloscope.connect(self.IPaddress, self.Port)
-                
+
                 self.set_state(prevState)
                 self.info_stream('Fault condition cleared.')
                 break
@@ -451,7 +491,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
             self.oscilloscope.close()
         except Exception, e:
             self.error_stream(''.join(('Could not disconnect from oscilloscope, ', str(e))))
-                
+
         self.set_status('Disconnected from oscilloscope')
         while self.stopStateThreadFlag == False:
             if self.get_state() != PyTango.DevState.OFF:
@@ -545,15 +585,15 @@ class RedPitayaDS(PyTango.Device_4Impl):
                 self.measurementStrings[3] = cmd.data
 
             elif cmd.command == 'start':
-                
+
                 self.set_state(PyTango.DevState.ON)
 #                 self.startHardwareThread()
 
             elif cmd.command == 'stop':
                 self.set_state(PyTango.DevState.STANDBY)
-                
+
             elif cmd.command == 'off':
-                self.set_state(PyTango.DevState.OFF)            
+                self.set_state(PyTango.DevState.OFF)
             elif cmd.command == 'test':
                 attrs = self.get_device_attr()
                 apa = attrs.get_w_attr_by_name('triggerlevel')
@@ -562,7 +602,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
                 print apa.get_write_value_length()
 
         except Queue.Empty:
-            pass            
+            pass
 
     def openOscilloscope(self):
         # If the device was closed, we open it again
@@ -575,6 +615,23 @@ class RedPitayaDS(PyTango.Device_4Impl):
                 self.set_state(PyTango.DevState.FAULT)
                 self.set_status(''.join(('Could not open device ', str(self.IPaddress))))
 
+    def resetWatchdog(self):
+        try:
+            self.watchdogTimer.cancel()
+        except:
+            pass
+        self.watchdogTimer = threading.Timer(self.WatchdogTimeout, self.watchdogHandler)
+        self.watchdogTimer.start()
+
+    def stopWatchdog(self):
+        try:
+            self.watchdogTimer.cancel()
+        except:
+            pass
+
+    def watchdogHandler(self):
+        self.info_stream('Watchdog timed out. Execute init device.')
+        self.init_device()
 
     def stopStateThread(self):
         self.info_stream('Stopping thread...')
@@ -585,7 +642,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
         self.info_stream('Now stopped.')
         self.stopStateThreadFlag = False
         self.set_state(PyTango.DevState.UNKNOWN)
-                    
+
 #==================================================================
 #
 #    RedPitayaDS read/write attribute methods
@@ -604,9 +661,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_TriggerSource(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerSource()")))
-        
+
         #    Add your own code here
-        
+
         attr_TriggerSource_read = self.oscilloscope.getTriggerSource()
         attr.set_value(attr_TriggerSource_read)
 
@@ -617,7 +674,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_TriggerSource(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerSource()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeTriggerSource', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -626,9 +683,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- TriggerSource attribute State Machine -----------------
     def is_TriggerSource_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
@@ -640,9 +695,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_TriggerMode(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerMode()")))
-        
+
         #    Add your own code here
-        
+
         attr_TriggerMode_read = self.oscilloscope.getTriggerMode()
         attr.set_value(attr_TriggerMode_read)
 
@@ -653,7 +708,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_TriggerMode(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerMode()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeTriggerMode', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -662,22 +717,20 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- TriggerMode attribute State Machine -----------------
     def is_TriggerMode_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
         return True
-    
+
 #------------------------------------------------------------------
 #    Read TriggerLevel attribute
 #------------------------------------------------------------------
     def read_TriggerLevel(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerLevel()")))
-        
+
         #    Add your own code here
-        
+
         attr_TriggerLevel_read = self.oscilloscope.getTriggerLevel()
         attr.set_value(attr_TriggerLevel_read)
 
@@ -688,7 +741,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_TriggerLevel(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerLevel()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeTriggerLevel', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -697,9 +750,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- TriggerLevel attribute State Machine -----------------
     def is_TriggerLevel_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
@@ -710,9 +761,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_TriggerDelay(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerDelay()")))
-        
+
         #    Add your own code here
-        
+
         attr_TriggerDelay_read = self.oscilloscope.getTriggerDelay()
         attr.set_value(attr_TriggerDelay_read)
 
@@ -723,7 +774,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_TriggerDelay(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerDelay()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeTriggerDelay', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -732,9 +783,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- TriggerDelay attribute State Machine -----------------
     def is_TriggerDelay_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
@@ -745,18 +794,16 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_TriggerWait(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerWait()")))
-        
+
         #    Add your own code here
-        
+
         attr_TriggerWait_read = self.redPitayaData.triggerWait
         attr.set_value(attr_TriggerWait_read)
 
 
 #---- TriggerWait attribute State Machine -----------------
     def is_TriggerWait_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
@@ -768,9 +815,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_RecordLength(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_RecordLength()")))
-        
+
         #    Add your own code here
-        
+
         attr_RecordLength_read = self.oscilloscope.getRecordLength()
         attr.set_value(attr_RecordLength_read)
 
@@ -781,7 +828,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_RecordLength(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_RecordLength()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeRecordLength', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -790,20 +837,18 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- RecordLength attribute State Machine -----------------
     def is_RecordLength_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
         return True
- 
+
 #------------------------------------------------------------------
 #    Read SampleRate attribute
 #------------------------------------------------------------------
     def read_SampleRate(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_SampleRate()")))
-        
+
         #    Add your own code here
         df = self.oscilloscope.getDecimationFactor()
         decDict = {0: 1,
@@ -822,7 +867,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_SampleRate(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_SampleRate()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeSampleRate', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -831,23 +876,21 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- SampleRate attribute State Machine -----------------
     def is_SampleRate_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
         return True
-       
-    
+
+
 #------------------------------------------------------------------
 #    Read TimeVector attribute
 #------------------------------------------------------------------
     def read_TimeVector(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_TimeVector()")))
-        
+
         #    Add your own code here
-        
+
         attr_TimeVector_read = self.oscilloscope.getTimevector()
         attr.set_value(attr_TimeVector_read, attr_TimeVector_read.shape[0])
 
@@ -866,9 +909,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_Waveform1(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_Waveform1()")))
-        
+
         #    Add your own code here
-        
+
         attr_data_read = self.redPitayaData.waveform1
         attr.set_value(attr_data_read, attr_data_read.shape[0])
 
@@ -887,9 +930,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_Waveform2(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_Waveform2()")))
-        
+
         #    Add your own code here
-        
+
         attr_data_read = self.redPitayaData.waveform2
         attr.set_value(attr_data_read, attr_data_read.shape[0])
 
@@ -908,7 +951,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_MeasurementString1(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString1()")))
-        
+
         #    Add your own code here
         attr_MeasurementString1_read = self.measurementStrings[0]
         attr.set_value(attr_MeasurementString1_read)
@@ -920,7 +963,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_MeasurementString1(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString1()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeMeasurementString1', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -929,20 +972,18 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- MeasurementString1 attribute State Machine -----------------
     def is_MeasurementString1_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
         return True
- 
+
 #------------------------------------------------------------------
 #    Read MeasurementString2 attribute
 #------------------------------------------------------------------
     def read_MeasurementString2(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString2()")))
-        
+
         #    Add your own code here
         attr_MeasurementString2_read = self.measurementStrings[1]
         attr.set_value(attr_MeasurementString2_read)
@@ -954,7 +995,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_MeasurementString2(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString2()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeMeasurementString2', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -963,9 +1004,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- MeasurementString2 attribute State Machine -----------------
     def is_MeasurementString2_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
@@ -976,7 +1015,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_MeasurementString3(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString3()")))
-        
+
         #    Add your own code here
         attr_MeasurementString3_read = self.measurementStrings[2]
         attr.set_value(attr_MeasurementString3_read)
@@ -988,7 +1027,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_MeasurementString3(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString3()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeMeasurementString3', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -997,9 +1036,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- MeasurementString3 attribute State Machine -----------------
     def is_MeasurementString3_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
@@ -1010,7 +1047,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_MeasurementString4(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString4()")))
-        
+
         #    Add your own code here
         attr_MeasurementString4_read = self.measurementStrings[3]
         attr.set_value(attr_MeasurementString4_read)
@@ -1022,7 +1059,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
     def write_MeasurementString4(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString4()")))
         data = attr.get_write_value()
-        
+
         #     Add your own code here
         self.commandQueue.put(DeviceCommand('writeMeasurementString4', data))
         self.info_stream(''.join(("Attribute value = ", str(data))))
@@ -1031,9 +1068,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 #---- MeasurementString4 attribute State Machine -----------------
     def is_MeasurementString4_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
+        if self.get_state() in []:
             #     End of Generated Code
             #     Re-Start of Generated Code
             return False
@@ -1044,9 +1079,11 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_MeasurementData1(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData1()")))
-        
+
         #    Add your own code here
         attr_MeasurementData1_read = self.measurementData[0]
+        if attr_MeasurementData1_read == None:
+            attr.set_quality(PyTango.AttrQuality.ATTR_INVALID)
         attr.set_value(attr_MeasurementData1_read)
 
 #---- MeasurementData1 attribute State Machine -----------------
@@ -1064,7 +1101,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_MeasurementData2(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData2()")))
-        
+
         #    Add your own code here
         attr_MeasurementData2_read = self.measurementData[1]
         attr.set_value(attr_MeasurementData2_read)
@@ -1084,7 +1121,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_MeasurementData3(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData3()")))
-        
+
         #    Add your own code here
         attr_MeasurementData3_read = self.measurementData[2]
         attr.set_value(attr_MeasurementData3_read)
@@ -1104,7 +1141,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
     def read_MeasurementData4(self, attr):
         self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData4()")))
-        
+
         #    Add your own code here
         attr_MeasurementData4_read = self.measurementData[3]
         attr.set_value(attr_MeasurementData4_read)
@@ -1129,33 +1166,33 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
 #    Start command:
 #
-#    Description: 
+#    Description:
 #------------------------------------------------------------------
     def Start(self):
         self.info_stream(''.join(("In ", self.get_name(), "::Start()")))
         #    Add your own code here
-        self.commandQueue.put(DeviceCommand('start'))        
+        self.commandQueue.put(DeviceCommand('start'))
 
 #------------------------------------------------------------------
 #    Stop command:
 #
-#    Description: 
+#    Description:
 #------------------------------------------------------------------
     def Stop(self):
         self.info_stream(''.join(("In ", self.get_name(), "::Stop()")))
         #    Add your own code here
-        self.commandQueue.put(DeviceCommand('stop'))        
+        self.commandQueue.put(DeviceCommand('stop'))
 
 #------------------------------------------------------------------
 #    Test command:
 #
-#    Description: 
+#    Description:
 #------------------------------------------------------------------
     def Test(self):
         self.info_stream(''.join(("In ", self.get_name(), "::Test()")))
         #    Add your own code here
-        self.commandQueue.put(DeviceCommand('test'))       
-        
+        self.commandQueue.put(DeviceCommand('test'))
+
 #==================================================================
 #
 #    RedPitayaDSClass class definition
@@ -1178,6 +1215,11 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             [PyTango.DevString,
             "Port of the oscilloscope socket",
             [ 8888 ] ],
+        'WatchdogTimeout':
+            [PyTango.DevDouble,
+            "Timeout for the watchdog resetting the hardware in s",
+            [ 2 ] ],
+
         }
 
 
@@ -1203,7 +1245,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Trigger source. One of channel1, channel2, or external",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
             } ],
         'TriggerMode':
             [[PyTango.DevString,
@@ -1211,7 +1253,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Trigger mode. One of auto, normal, or single",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
             } ],
         'TriggerLevel':
             [[PyTango.DevDouble,
@@ -1219,7 +1261,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Trigger voltage level.",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
                 'unit':"V",
             } ],
         'TriggerDelay':
@@ -1228,7 +1270,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Delay after detected trigger to acquisition start.",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
                 'unit':"s"
             } ],
         'TriggerWait':
@@ -1244,7 +1286,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Number of samples in the waveform.",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
             } ],
         'SampleRate':
             [[PyTango.DevDouble,
@@ -1252,7 +1294,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Samples per second. Values will be snapped to the next higher factor in 125e6/n (n=1, 8, 64, 1024, 8192, 16384). That is 125, 15.6, 1.95, 0.122, 0.0152, or 0.00762 MSps",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
                 'unit': "S/s"
             } ],
 
@@ -1267,14 +1309,14 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             [[PyTango.DevDouble,
             PyTango.SPECTRUM,
             PyTango.READ, 16000],
-            {             
+            {
                 'unit':"V",
             } ],
         'Waveform2':
             [[PyTango.DevDouble,
             PyTango.SPECTRUM,
             PyTango.READ, 16000],
-            {             
+            {
                 'unit':"V",
             } ],
         'MeasurementString1':
@@ -1283,7 +1325,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Line to evaluate to produce measurement",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
             } ],
         'MeasurementString2':
             [[PyTango.DevString,
@@ -1291,7 +1333,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Line to evaluate to produce measurement",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
             } ],
         'MeasurementString3':
             [[PyTango.DevString,
@@ -1299,7 +1341,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Line to evaluate to produce measurement",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
             } ],
         'MeasurementString4':
             [[PyTango.DevString,
@@ -1307,7 +1349,7 @@ class RedPitayaDSClass(PyTango.DeviceClass):
             PyTango.READ_WRITE],
             {
                 'description':"Line to evaluate to produce measurement",
-                'Memorized':"true_without_hard_applied",
+                'Memorized':"true",
             } ],
         'MeasurementData1':
             [[PyTango.DevDouble,

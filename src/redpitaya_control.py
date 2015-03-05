@@ -15,10 +15,11 @@ class RedPitayaData(object):
         self.triggerSource = 'CHANNEL1'
         self.triggerEdge = 0
         self.triggerLevel = 0.0
-        self.triggerDelay = 0.0 
-        self.triggerWait = False       
+        self.triggerDelay = 0.0
+        self.triggerWait = False
         self.recordLength = 2000
         self.decimationFactor = 0
+        self.sampleRate = 125e6
         self.waveform1 = np.zeros(2000)
         self.waveform2 = np.zeros(2000)
         self.timevector = np.zeros(2000)
@@ -29,34 +30,34 @@ class RedPitayaData(object):
         self.dcOffset_ch2 = 0
         self.adcFactor_ch1 = 1.0
         self.adcFactor_ch2 = 1.0
-        
+
 
 class RedPitaya_control(object):
     def __init__(self, ip, port=8888):
         self.redPitayaData = RedPitayaData()
-        
+
         self.lock = threading.Lock()
-        self.dtSize = 50
+        self.dtSize = 10
         self.dtArray = np.zeros(self.dtSize)
         self.dtIndex = 0
         self.t0 = time.time()
-        
+
         self.ip = ip
         self.port = port
         self.connected = False
         self.connect(self.ip, self.port)
-        
+
         self.getCalibrationFactors()
-        
+
     def connect(self, ip, port):
         if self.connected == True:
             self.close()
-        
+
         self.sock = socket.socket()
         self.sock.settimeout(0.5)
         self.sock.connect((ip, port))
-        self.connected = True        
-            
+        self.connected = True
+
     def close(self):
         try:
             self.connected = False
@@ -72,7 +73,7 @@ class RedPitaya_control(object):
             raise IOError('Did not send full message')
         rep = self.sock.recv(70000)
         return rep
-                
+
     def initScope(self):
         self.setTriggerSource(self.redPitayaData.triggerSource)
         self.setTriggerMode(self.redPitayaData.triggerMode)
@@ -80,7 +81,7 @@ class RedPitaya_control(object):
 #        self.setTriggerEdge(self.redPitayaData.triggerEdge)
         self.setRecordLength(self.redPitayaData.recordLength)
         self.setDecimationFactor(self.redPitayaData.decimationFactor)
-        
+
     def getCalibrationFactors(self):
         msg = 'getCalibrationOffset:0'
         calString = self.sendReceive(msg)
@@ -96,16 +97,16 @@ class RedPitaya_control(object):
         msg = 'getCalibrationMaxADC:1'
         calString = self.sendReceive(msg)
         self.redPitayaData.maxADCv_ch2 = np.fromstring(calString, dtype=np.float32)[0]
-        
+
         self.redPitayaData.adcFactor_ch1 = self.redPitayaData.maxADCv_ch1 / 2 ** 13
         self.redPitayaData.adcFactor_ch2 = self.redPitayaData.maxADCv_ch2 / 2 ** 13
-        
+
         print 'Calibration factors:'
         print 'max adc 1: ', self.redPitayaData.maxADCv_ch1
         print 'max adc 2: ', self.redPitayaData.maxADCv_ch2
         print 'offset 1: ', self.redPitayaData.dcOffset_ch1
         print 'offset 2: ', self.redPitayaData.dcOffset_ch2
-        
+
     def setTriggerSource(self, source):
         sp = str(source).lower()
         if sp in ['ch1', 'channel1', '1']:
@@ -122,19 +123,19 @@ class RedPitaya_control(object):
         self.lock.acquire()
         msg = ''.join(('setTriggerSource:', sourceMsg))
         self.sendReceive(msg)
-        self.lock.release()        
+        self.lock.release()
         self.redPitayaData.triggerSource = sp
-        
+
     def getTriggerSource(self):
         return self.redPitayaData.triggerSource
-        
+
     def setTriggerMode(self, mode):
         sp = str(mode).lower()
         if sp in ['auto', 'a']:
-            sp = 'auto'            
+            sp = 'auto'
             cmdMsg = 'AUTO'
         elif sp in ['normal', 'norm', 'n']:
-            sp = 'normal'            
+            sp = 'normal'
             cmdMsg = 'NORMAL'
         elif sp in ['single', 'sing', 's']:
             sp = 'single'
@@ -144,15 +145,15 @@ class RedPitaya_control(object):
         self.lock.acquire()
         msg = ''.join(('setTriggerMode:', cmdMsg))
         self.sendReceive(msg)
-        self.lock.release()        
+        self.lock.release()
         self.redPitayaData.triggerMode = sp
-        
+
     def getTriggerMode(self):
         return self.redPitayaData.triggerMode
 
     def setTriggerEdge(self, edge):
         sp = str(edge).lower()
-        if sp in ['rising', 'rise', 'r', '1']:
+        if sp in ['rising', 'rise', 'r', '0']:
             sp = 'rising'
             cmdMsg = '0'
         elif sp in ['falling', 'fall', 'f', '1']:
@@ -163,12 +164,12 @@ class RedPitaya_control(object):
         self.lock.acquire()
         msg = ''.join(('setTriggerEdge:', cmdMsg))
         self.sendReceive(msg)
-        self.lock.release()        
+        self.lock.release()
         self.redPitayaData.triggerEdge = sp
-        
+
     def getTriggerEdge(self):
         return self.redPitayaData.triggerEdge
-        
+
     def setRecordLength(self, recLength):
         if recLength > 12000:
             recLength = 12000
@@ -180,7 +181,7 @@ class RedPitaya_control(object):
         self.lock.release()
         self.redPitayaData.recordLength = recLength
         self.generateTimevector()
-        
+
     def getRecordLength(self):
         return self.redPitayaData.recordLength
 
@@ -195,11 +196,11 @@ class RedPitaya_control(object):
         self.lock.release()
         self.redPitayaData.decimationFactor = decFactor
         self.generateTimevector()
-        
+
     def getDecimationFactor(self):
         return self.redPitayaData.decimationFactor
-        
-    def generateTimevector(self):        
+
+    def generateTimevector(self):
         # Base sampling rate 125 MSPS. It is decimated by decimationfactor according to:
         decDict = {0: 1,
                    1: 8,
@@ -207,12 +208,16 @@ class RedPitaya_control(object):
                    3: 1024,
                    4: 8192,
                    5: 16384}
-        dt = decDict[self.redPitayaData.decimationFactor] / 125e6        
+        dt = decDict[self.redPitayaData.decimationFactor] / 125e6
+        self.redPitayaData.sampleRate = 125e6 / decDict[self.redPitayaData.decimationFactor]
         self.redPitayaData.timevector = np.linspace(0, dt * self.redPitayaData.recordLength, self.redPitayaData.recordLength)
-    
+
     def getTimevector(self):
         return self.redPitayaData.timevector
-    
+
+    def getSampleRate(self):
+        return self.redPitayaData.sampleRate
+
     def setTriggerLevel(self, trigLevel):
         if trigLevel > 2:
             trigLevel = 2
@@ -223,27 +228,27 @@ class RedPitaya_control(object):
         self.sendReceive(msg)
         self.lock.release()
         self.redPitayaData.triggerLevel = trigLevel
-        
+
     def getTriggerLevel(self):
         return self.redPitayaData.triggerLevel
 
     def setTriggerDelay(self, trigDelay):
-        if trigDelay > 2:
-            trigDelay = 2
-        elif trigDelay < -2:
-            trigDelay = -2
+#         if trigDelay > 2:
+#             trigDelay = 2
+#         elif trigDelay < -2:
+#             trigDelay = -2
         self.lock.acquire()
-        msg = ''.join(('setTriggerDelay:', str(trigDelay * 1e6)))
+        msg = ''.join(('setTriggerDelay:', str(trigDelay * 1e6))) # Trigger delay is in microoseconds
         self.sendReceive(msg)
         self.lock.release()
         self.redPitayaData.triggerDelay = trigDelay
-        
+
     def getTriggerDelay(self):
         return self.redPitayaData.triggerDelay
-    
+
     def getWaveform(self, channel):
 #        self.lock.acquire()
-        if channel == 1: 
+        if channel == 1:
             return self.redPitayaData.waveform1
         elif channel == 2:
             return self.redPitayaData.waveform2
@@ -257,7 +262,11 @@ class RedPitaya_control(object):
         if sig1 != 'not triggered':
             retries = 1
             while len(sig1) != self.redPitayaData.recordLength * 4:
-                extradata = self.sock.recv(70000)
+                try:
+                    extradata = self.sock.recv(70000)
+                except socket.timeout:
+                    print "Receive timeout"
+                    return False
                 sig1 = ''.join((sig1, extradata))
                 retries += 1
                 if retries > 10:
@@ -271,11 +280,16 @@ class RedPitaya_control(object):
             else:
                 self.redPitayaData.fps = 1 / self.dtArray[0:self.dtIndex]
             self.t0 = t
+            self.dtIndex += 1
         sig2 = self.sendReceive('getWaveform:1')
         if sig2 != 'not triggered':
             retries = 1
             while len(sig2) != self.redPitayaData.recordLength * 4:
-                extradata = self.sock.recv(70000)
+                try:
+                    extradata = self.sock.recv(70000)
+                except socket.timeout:
+                    print "Receive timeout"
+                    return False
                 sig2 = ''.join((sig2, extradata))
                 retries += 1
                 if retries > 10:
@@ -298,7 +312,7 @@ class RedPitaya_control(object):
 #                retries += 1
 #                if retries > 10:
 #                    return False
-#            waveforms = np.fromstring(sig1, dtype=np.float32)            
+#            waveforms = np.fromstring(sig1, dtype=np.float32)
 #            self.redPitayaData.waveform1 = self.redPitayaData.adcFactor_ch1 * (waveforms[0:waveforms.shape[0] / 2] - self.redPitayaData.dcOffset_ch1)
 #            t = time.time()
 #            dt = t - self.t0
@@ -314,4 +328,4 @@ class RedPitaya_control(object):
 #            return False
 #        else:
 #            return True
-        
+
