@@ -96,9 +96,12 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
         self.oscilloscope = None
 
-        self.measurementStrings = ['max(w1)', 'max(w2)', 'w1.sum()', 'w2.sum()']
-        self.measurementData = np.array([0.0, 0.0, 0.0, 0.0])
-        self.redPitayaData = rpc.RedPitayaData()
+        try:
+            self.measurementStrings
+        except:
+            self.measurementStrings = ['max(w1)', 'max(w2)', 'w1.sum()', 'w2.sum()']
+            self.measurementData = np.array([0.0, 0.0, 0.0, 0.0])
+            self.redPitayaData = rpc.RedPitayaData()
         self.stateThread = threading.Thread()
         threading.Thread.__init__(self.stateThread, target=self.stateHandlerDispatcher)
 
