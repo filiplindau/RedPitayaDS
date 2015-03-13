@@ -85,11 +85,11 @@ class RedPitaya_control(object):
     def getCalibrationFactors(self):
         msg = 'getCalibrationOffset:0'
         calString = self.sendReceive(msg)
-        self.redPitayaData.dcOffset_ch1 = np.fromstring(calString, dtype=np.int)[0]
+        self.redPitayaData.dcOffset_ch1 = np.fromstring(calString, dtype=np.int32)[0]
         self.redPitayaData.dcOffset_ch1 = -150
         msg = 'getCalibrationOffset:1'
         calString = self.sendReceive(msg)
-        self.redPitayaData.dcOffset_ch2 = np.fromstring(calString, dtype=np.int)[0]
+        self.redPitayaData.dcOffset_ch2 = np.fromstring(calString, dtype=np.int32)[0]
         self.redPitayaData.dcOffset_ch2 = -150
         msg = 'getCalibrationMaxADC:0'
         calString = self.sendReceive(msg)
