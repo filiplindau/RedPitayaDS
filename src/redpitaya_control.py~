@@ -85,6 +85,7 @@ class RedPitaya_control(object):
     def getCalibrationFactors(self):
         msg = 'getCalibrationOffset:0'
         calString = self.sendReceive(msg)
+	print calString
         self.redPitayaData.dcOffset_ch1 = np.fromstring(calString, dtype=np.int32)[0]
         self.redPitayaData.dcOffset_ch1 = -150
         msg = 'getCalibrationOffset:1'
