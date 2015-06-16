@@ -13,15 +13,19 @@ class RedPitayaData(object):
 	def __init__(self):
 		self.triggerMode = 'AUTO'
 		self.triggerSource = 'CHANNEL1'
-		self.triggerEdge = 0
+		self.triggerEdge = 'pe'
 		self.triggerLevel = 0.0
-		self.triggerDelay = 0.0
+#		self.triggerDelay = 0.0
+		self.triggerDelayTime = 0.0
+		self.triggerDelaySamples = 4096
 		self.triggerWait = False
 		self.recordLength = 8192
 		self.decimationFactor = 0
 		self.sampleRate = 125e6
 		self.waveform1 = np.zeros(2000)
+		self.triggerCounter1 = 0
 		self.waveform2 = np.zeros(2000)
+		self.triggerCounter2 = 0
 		self.waveformDatatype = np.float32
 		self.timevector = np.zeros(2000)
 		self.fps = 0.0
@@ -126,13 +130,10 @@ class RedPitaya_control(object):
 			sourceMsg = 'EXT'
 		else:
 			raise ValueError(''.join(('Wrong trigger source ', str(source), ', use ch1, ch2, or ext')))
-		self.lock.acquire()
-		msg = ''.join(('setTriggerSource:', sourceMsg))
-		self.sendReceive(msg)
-		self.lock.release()
-		self.redPitayaData.triggerSource = sp
+		edge = self.redPitayaData.triggerEdge
+		self.setTriggerSourceEdge(sp, edge)
 
-	def setTriggerSourceExplicit(self, source, edge):
+	def setTriggerSourceEdge(self, source, edge):
 		""" Set the trigger source and edge to use.
 		Input: 
 			source: ch1, ch2 or ext
@@ -167,38 +168,6 @@ class RedPitaya_control(object):
 		self.redPitayaData.triggerSource = sp
 		self.redPitayaData.triggerEdge = ed
 		
-	def setTriggerSourceEdge(self, source, edge):
-		""" Set the trigger source and edge to use.
-		Input: 
-			source: ch1, ch2 or ext
-			edge: pe or ne
-		"""
-		sp = str(source).lower()
-		ed = str(edge).lower()
-		if sp in ['ch1', 'channel1', '1']:
-			sp = 'channel1'
-			sourceMsg = 'CH1'
-		elif sp in ['ch2', 'channel2', '2']:
-			sp = 'channel2'
-			sourceMsg = 'CH2'
-		elif sp in ['ext', 'external']:
-			sp = 'external'
-			sourceMsg = 'EXT'
-		else:
-			raise ValueError(''.join(('Wrong trigger source ', str(source), ', use ch1, ch2, or ext')))
-		if ed == 'pe':
-			sourceMsg = ''.join((sourceMsg, ', PE'))
-		elif ed == 'ne':
-			sourceMsg = ''.join((sourceMsg, ', NE'))
-		else:
-			raise ValueError(''.join(('Wrong trigger edge ', str(edge), ', use pe, or ne')))
-		self.lock.acquire()
-		msg = ''.join(('setTriggerSourceEdge:', sourceMsg))
-		self.sendReceive(msg)
-		self.lock.release()
-		self.redPitayaData.triggerSource = sp
-		self.redPitayaData.triggerEdge = ed
-
 	def getTriggerSource(self):
 		return self.redPitayaData.triggerSource
 
@@ -244,7 +213,7 @@ class RedPitaya_control(object):
 		elif recLength < 1:
 			recLength = 1
 		self.lock.acquire()
-		msg = ''.join(('setRecordlength:', str(recLength)))
+		msg = ''.join(('setRecordLength:', str(recLength)))
 		self.sendReceive(msg)
 		self.lock.release()
 		self.redPitayaData.recordLength = recLength
@@ -300,27 +269,26 @@ class RedPitaya_control(object):
 	def getTriggerLevel(self):
 		return self.redPitayaData.triggerLevel
 
-	def setTriggerDelay(self, trigDelay):
-#         if trigDelay > 2:
-#             trigDelay = 2
-#         elif trigDelay < -2:
-#             trigDelay = -2
-		self.lock.acquire()
-		msg = ''.join(('setTriggerDelay:', str(trigDelay * 1e6))) # Trigger delay is in microoseconds
-		self.sendReceive(msg)
-		self.lock.release()
-		self.redPitayaData.triggerDelay = trigDelay
+	def setTriggerDelayTime(self, trigDelay):
+		"""Set trigger delay in s 
+		"""
+		self.redPitayaData.triggerDelayTime = trigDelay
+		triggerDelaySamples = self.redPitayaData.recordLength/2.0 - trigDelay*self.redPitayaData.sampleRate
+		if triggerDelaySamples < 0:
+			self.setTriggerDelaySamples(0)
+		elif triggerDelaySamples > self.redPitayaData.recordLength:
+			self.setTriggerDelaySamples(self.redPitayaData.recordLength)
+		else:
+			self.setTriggerDelaySamples(triggerDelaySamples)
+		
 
 	def setTriggerDelaySamples(self, trigDelay):
-#         if trigDelay > 2:
-#             trigDelay = 2
-#         elif trigDelay < -2:
-#             trigDelay = -2
-		self.lock.acquire()
-		msg = ''.join(('setTriggerDelaySamples:', str(trigDelay))) # Trigger delay is in samples
-		self.sendReceive(msg)
-		self.lock.release()
-		self.redPitayaData.triggerDelay = trigDelay
+		print "New trig delay: ", trigDelay, " samples"
+		with self.lock:
+			msg = ''.join(('setTriggerDelaySamples:', str(np.int(trigDelay)))) # Trigger delay is in samples
+			self.sendReceive(msg)
+		self.redPitayaData.triggerDelaySamples = trigDelay
+		self.redPitayaData.triggerDelayTime = (self.redPitayaData.recordLength/2.0 - trigDelay) / self.redPitayaData.sampleRate
 		
 	def setTriggerPos(self, trigPos):
 		self.lock.acquire()
@@ -329,15 +297,36 @@ class RedPitaya_control(object):
 		self.lock.release()
 		self.redPitayaData.triggerDelay = trigPos / self.redPitayaData.sampleRate
 
-	def getTriggerDelay(self):
-		return self.redPitayaData.triggerDelay
+	def getTriggerDelayTime(self):
+		return self.redPitayaData.triggerDelayTime
+
+	def getTriggerDelaySamples(self):
+		return self.redPitayaData.triggerDelaySamples
+		
+	def getTriggerCounter(self, channel):
+		""" triggerCounter = getTriggerCounter(channel)
+		
+		input: 
+			channel = 1 or 2
+		output:
+			triggerCounter = redpitaya internal trigger counter for the specific
+							 channel from the latest updateWaveform call
+			
+		Returns trigger counter for the waveform stored in the redPitayaData data structure
+		"""
+		if channel == 1:
+			return self.redPitayaData.triggerCounter1
+		elif channel == 2:
+			return self.redPitayaData.triggerCounter2
+		else:
+			raise ValueError(''.join(('Wrong channel ', str(channel), ', use 1, or 2')))
 		
 	def getFPGATemp(self):
 		self.lock.acquire()
 		msg = 'getFPGATemp' 
 		tempString = self.sendReceive(msg)
 		self.lock.release()
-		print "FPGA temperature: ", tempString
+		return double(tempString)
 
 	def getWaveform(self, channel):
 		""" waveform = getWaveform(channel)
@@ -359,41 +348,70 @@ class RedPitaya_control(object):
 #        self.lock.release()
 
 	def updateWaveforms(self):
-		self.lock.acquire()
-		sig1 = self.sendReceive('getWaveformFloat:0')
-		if sig1 != 'not triggered':
-			retries = 1
-			readLength = np.fromstring(sig1[0:self.redPitayaData.waveformDatatype().itemsize], dtype=self.redPitayaData.waveformDatatype)
-			print "getWaveform:0 expected read length ", readLength * self.redPitayaData.waveformDatatype().itemsize
-			while len(sig1) != (readLength + 1) * self.redPitayaData.waveformDatatype().itemsize:
-				print ''.join(("getWaveform:0 returned ", str(len(sig1)), ' bytes')) 
-				try:
-					extradata = self.sock.recv(70000)
-				except socket.timeout:
-					print "Receive timeout"
-					return False
-				sig1 = ''.join((sig1, extradata))
-				retries += 1
-				if retries > 10:
-					print "Retries exceeded"
-					return False
-			if self.redPitayaData.waveformDatatype == np.int16:
-				print "Rescaling data"
-				self.redPitayaData.waveform1 = self.redPitayaData.adcFactor_ch1 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch1)
-			else:
-				self.redPitayaData.waveform1 = np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype)
-			t = time.time()
-			dt = t - self.t0
-			self.dtArray[self.dtIndex % self.dtSize] = dt
-			if self.dtIndex > self.dtSize:
-				self.redPitayaData.fps = 1 / self.dtArray.mean()
-			else:
-				self.redPitayaData.fps = 1 / self.dtArray[0:self.dtIndex]
-			self.t0 = t
-			self.dtIndex += 1
-		self.lock.release()
+		with self.lock:
+			sig1 = self.sendReceive('getWaveformFloat:0')
+			if sig1 != 'not triggered':
+				retries = 1
+				itemsize = self.redPitayaData.waveformDatatype().itemsize
+				readLength = np.int(np.fromstring(sig1[0:itemsize], dtype=self.redPitayaData.waveformDatatype))
+#				print "getWaveform:0 expected read length ", readLength 
+				trigCounter = np.int(np.fromstring(sig1[itemsize:2*itemsize], dtype=self.redPitayaData.waveformDatatype))
+				while len(sig1) < (readLength + 2) * itemsize:
+	#				print ''.join(("getWaveform:0 returned ", str(len(sig1)), ' bytes')) 
+					try:
+						extradata = self.sock.recv(70000)
+					except socket.timeout:
+						print "Receive timeout"
+						return False
+					sig1 = ''.join((sig1, extradata))
+					retries += 1
+					if retries > 10:
+						print "Retries exceeded"
+						return False
+				if self.redPitayaData.waveformDatatype == np.int16:
+					print "Rescaling data"
+					self.redPitayaData.waveform1 = self.redPitayaData.adcFactor_ch1 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch1)
+				else:
+					self.redPitayaData.waveform1 = np.fromstring(sig1[2*itemsize:], dtype=self.redPitayaData.waveformDatatype)
+					self.redPitayaData.triggerCounter1 = trigCounter
+					
+			sig2 = self.sendReceive('getWaveformFloat:1')
+			if sig2 != 'not triggered':
+				retries = 1
+				itemsize = self.redPitayaData.waveformDatatype().itemsize
+				readLength = np.int(np.fromstring(sig2[0:itemsize], dtype=self.redPitayaData.waveformDatatype))
+#				print "getWaveform:1 expected read length ", readLength 
+				trigCounter = np.int(np.fromstring(sig2[itemsize:2*itemsize], dtype=self.redPitayaData.waveformDatatype))
+				while len(sig2) < (readLength + 2) * itemsize:
+	#				print ''.join(("getWaveform:1 returned ", str(len(sig1)), ' bytes')) 
+					try:
+						extradata = self.sock.recv(70000)
+					except socket.timeout:
+						print "Receive timeout"
+						return False
+					sig2 = ''.join((sig2, extradata))
+					retries += 1
+					if retries > 10:
+						print "Retries exceeded"
+						return False
+				if self.redPitayaData.waveformDatatype == np.int16:
+					print "Rescaling data"
+					self.redPitayaData.waveform2 = self.redPitayaData.adcFactor_ch2 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch2)
+				else:
+					self.redPitayaData.waveform2 = np.fromstring(sig2[2*itemsize:], dtype=self.redPitayaData.waveformDatatype)
+					self.redPitayaData.triggerCounter2 = trigCounter
+									
+				t = time.time()
+				dt = t - self.t0
+				self.dtArray[self.dtIndex % self.dtSize] = dt
+				if self.dtIndex > self.dtSize:
+					self.redPitayaData.fps = 1 / self.dtArray.mean()
+				else:
+					self.redPitayaData.fps = 1 / self.dtArray[0:self.dtIndex]
+				self.t0 = t
+				self.dtIndex += 1
 		if sig1 == 'not triggered':
-			print "Not triggered"
+#			print "Not triggered"
 			return False
 		else:
 			return True

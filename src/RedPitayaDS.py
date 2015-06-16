@@ -42,9 +42,9 @@ import Queue
 
 
 class DeviceCommand:
-    def __init__(self, command, data=None):
-        self.command = command
-        self.data = data
+	def __init__(self, command, data=None):
+		self.command = command
+		self.data = data
 
 
 #==================================================================
@@ -67,156 +67,157 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
 #    Device constructor
 #------------------------------------------------------------------
-    def __init__(self, cl, name):
-        PyTango.Device_4Impl.__init__(self, cl, name)
-        RedPitayaDS.init_device(self)
+	def __init__(self, cl, name):
+		PyTango.Device_4Impl.__init__(self, cl, name)
+		RedPitayaDS.init_device(self)
 
 #------------------------------------------------------------------
 #    Device destructor
 #------------------------------------------------------------------
-    def delete_device(self):
-        self.info_stream(''.join(("[Device delete_device method] for device", self.get_name())))
-        self.stopStateThread()
-        self.oscilloscope.close()
+	def delete_device(self):
+		self.info_stream(''.join(("[Device delete_device method] for device", self.get_name())))
+		self.stopStateThread()
+		self.oscilloscope.close()
 
 
 #------------------------------------------------------------------
 #    Device initialization
 #------------------------------------------------------------------
-    def init_device(self):
-        self.info_stream(''.join(("In ", self.get_name(), "::init_device()")))
-        self.set_state(PyTango.DevState.UNKNOWN)
-        self.get_device_properties(self.get_device_class())
+	def init_device(self):
+		self.info_stream(''.join(("In ", self.get_name(), "::init_device()")))
+		self.set_state(PyTango.DevState.UNKNOWN)
+		self.get_device_properties(self.get_device_class())
 
-        try:
-            self.stopStateThread()
-            self.oscilloscope.close()
-        except Exception, e:
-            pass
+		try:
+			self.stopStateThread()
+			self.oscilloscope.close()
+		except Exception, e:
+			pass
 
-        self.oscilloscope = None
+		self.oscilloscope = None
 
-        try:
-            self.measurementStrings
-        except:
-            self.measurementStrings = ['max(w1)', 'max(w2)', 'w1.sum()', 'w2.sum()']
-            self.measurementData = np.array([0.0, 0.0, 0.0, 0.0])
-            self.redPitayaData = rpc.RedPitayaData()
-        self.stateThread = threading.Thread()
-        threading.Thread.__init__(self.stateThread, target=self.stateHandlerDispatcher)
+		try:
+			self.measurementStrings
+		except:
+			self.measurementStrings = ['max(w1)', 'max(w2)', 'w1.sum()', 'w2.sum()']
+			self.measurementData = np.array([0.0, 0.0, 0.0, 0.0])
+			self.redPitayaData = rpc.RedPitayaData()
+		self.stateThread = threading.Thread()
+		threading.Thread.__init__(self.stateThread, target=self.stateHandlerDispatcher)
 
-        self.commandQueue = Queue.Queue(100)
+		self.commandQueue = Queue.Queue(100)
 
-        self.stateHandlerDict = {PyTango.DevState.ON: self.onHandler,
-                                PyTango.DevState.STANDBY: self.standbyHandler,
-                                PyTango.DevState.ALARM: self.onHandler,
-                                PyTango.DevState.FAULT: self.faultHandler,
-                                PyTango.DevState.INIT: self.initHandler,
-                                PyTango.DevState.UNKNOWN: self.unknownHandler,
-                                PyTango.DevState.OFF: self.offHandler}
+		self.stateHandlerDict = {PyTango.DevState.ON: self.onHandler,
+								PyTango.DevState.STANDBY: self.standbyHandler,
+								PyTango.DevState.ALARM: self.onHandler,
+								PyTango.DevState.FAULT: self.faultHandler,
+								PyTango.DevState.INIT: self.initHandler,
+								PyTango.DevState.UNKNOWN: self.unknownHandler,
+								PyTango.DevState.OFF: self.offHandler}
 
-        self.stopStateThreadFlag = False
+		self.stopStateThreadFlag = False
 
-        self.stateThread.start()
+		self.stateThread.start()
 
 
 #------------------------------------------------------------------
 #    Always excuted hook method
 #------------------------------------------------------------------
-    def always_executed_hook(self):
-        self.info_stream(''.join(("In ", self.get_name(), "::always_excuted_hook()")))
+	def always_executed_hook(self):
+		self.info_stream(''.join(("In ", self.get_name(), "::always_excuted_hook()")))
 
 
-    def stateHandlerDispatcher(self):
-        prevState = self.get_state()
-        while self.stopStateThreadFlag == False:
-            try:
-                state = self.get_state()
-                self.stateHandlerDict[state](prevState)
-                prevState = state
-            except KeyError:
-                self.stateHandlerDict[PyTango.DevState.UNKNOWN](prevState)
-                prevState = state
+	def stateHandlerDispatcher(self):
+		prevState = self.get_state()
+		while self.stopStateThreadFlag == False:
+			try:
+				state = self.get_state()
+				self.stateHandlerDict[state](prevState)
+				prevState = state
+			except KeyError:
+				self.stateHandlerDict[PyTango.DevState.UNKNOWN](prevState)
+				prevState = state
 
 
-    def unknownHandler(self, prevState):
-        self.info_stream('Entering unknownHandler')
-        connectionTimeout = 1.0
+	def unknownHandler(self, prevState):
+		self.info_stream('Entering unknownHandler')
+		connectionTimeout = 1.0
 
-        self.stopWatchdog()
+		self.stopWatchdog()
 
-        self.oscilloscopeData = None
-        try:
-            self.oscilloscope = rpc.RedPitaya_control(self.IPaddress, self.Port)
-            self.set_state(PyTango.DevState.INIT)
-            self.info_stream('... connected')
-        except Exception, e:
-            self.error_stream(''.join(('Could not create oscilloscope object.', str(e))))
-            self.set_state(PyTango.DevState.UNKNOWN)
-            self.set_status(''.join(('Could not create oscilloscope object.', str(e))))
-
-
-        while self.get_state() == PyTango.DevState.UNKNOWN:
-            self.info_stream('Trying to connect...')
-            try:
-                self.oscilloscope.close()
-            except:
-                pass
-            try:
-                self.oscilloscope = rpc.RedPitaya_control(self.IPaddress, self.Port)
-                self.set_state(PyTango.DevState.INIT)
-                self.info_stream('... connected')
-            except Exception, e:
-                self.error_stream(''.join(('Could not create oscilloscope object.', str(e))))
-                self.set_state(PyTango.DevState.UNKNOWN)
-                self.set_status(''.join(('Could not create oscilloscope object.', str(e))))
-
-            time.sleep(connectionTimeout)
-
-    def initHandler(self, prevState):
-        self.info_stream('Entering initHandler')
-        self.set_state(PyTango.DevState.INIT)
-        s_status = 'Starting initialization\n'
-        self.set_status(s_status)
-        self.info_stream(s_status)
-        initTimeout = 1.0  # Retry time interval
-
-        exitInitFlag = False  # Flag to see if we can leave the loop
+		self.oscilloscopeData = None
+		try:
+			self.oscilloscope = rpc.RedPitaya_control(self.IPaddress, self.Port)
+			self.set_state(PyTango.DevState.INIT)
+			self.info_stream('... connected')
+		except Exception, e:
+			self.error_stream(''.join(('Could not create oscilloscope object.', str(e))))
+			self.set_state(PyTango.DevState.UNKNOWN)
+			self.set_status(''.join(('Could not create oscilloscope object.', str(e))))
 
 
-        while exitInitFlag == False:
-            exitInitFlag = True  # Preset in case nothing goes wrong
+		while self.get_state() == PyTango.DevState.UNKNOWN:
+			self.info_stream('Trying to connect...')
+			try:
+				self.oscilloscope.close()
+			except:
+				pass
+			try:
+				self.oscilloscope = rpc.RedPitaya_control(self.IPaddress, self.Port)
+				self.set_state(PyTango.DevState.INIT)
+				self.info_stream('... connected')
+			except Exception, e:
+				self.error_stream(''.join(('Could not create oscilloscope object.', str(e))))
+				self.set_state(PyTango.DevState.UNKNOWN)
+				self.set_status(''.join(('Could not create oscilloscope object.', str(e))))
 
-            try:
-                s = 'Initializing scope settings\n'
-                s_status = ''.join((s_status, s))
-                self.set_status(s_status)
-                self.info_stream(s)
-                self.oscilloscope.initScope()
-            except Exception, e:
-                self.error_stream('Could not initialize scope')
-                exitInitFlag = False
-                time.sleep(initTimeout)
-                continue
+			time.sleep(connectionTimeout)
 
-            s = 'Setting trigger level\n'
-            s_status = ''.join((s_status, s))
-            self.set_status(s_status)
-            self.info_stream(s)
-            attrs = self.get_device_attr()
+	def initHandler(self, prevState):
+		self.info_stream('Entering initHandler')
+		self.set_state(PyTango.DevState.INIT)
+		s_status = 'Starting initialization\n'
+		self.set_status(s_status)
+		self.info_stream(s_status)
+		initTimeout = 1.0  # Retry time interval
 
-            attrNbr = attrs.get_attr_nb()
-            self.info_stream(''.join(('Found ', str(attrNbr), ' attributes.')))
-            attrList = attrs.get_attribute_list()
-            self.info_stream(str(type(attrList)))
-            for k in range(attrNbr):
-                attr = attrs.get_attr_by_ind(k)
-                self.info_stream(attr.get_name())
-                self.info_stream(''.join(('Associated write: ', attr.get_assoc_name())))
-                self.info_stream(''.join(('Associated index: ', str(attr.get_assoc_ind()))))
-                if attr.get_assoc_name() != 'None':
-                    wAttr = attrs.get_w_attr_by_ind(attr.get_assoc_ind())
-                    self.info_stream(''.join((wAttr.get_name())))
+		exitInitFlag = False  # Flag to see if we can leave the loop
+
+
+		while exitInitFlag == False:
+			exitInitFlag = True  # Preset in case nothing goes wrong
+
+			try:
+				s = 'Initializing scope settings\n'
+				s_status = ''.join((s_status, s))
+				self.set_status(s_status)
+				self.info_stream(s)
+				self.oscilloscope.initScope()
+			except Exception, e:
+				errMsg = ''.join(('In initHandler: could not initialize scope settings:', str(e)))
+				self.error_stream(errMsg)
+				exitInitFlag = False
+				time.sleep(initTimeout)
+				continue
+
+			s = 'Setting trigger level\n'
+			s_status = ''.join((s_status, s))
+			self.set_status(s_status)
+			self.info_stream(s)
+			attrs = self.get_device_attr()
+
+			attrNbr = attrs.get_attr_nb()
+			self.info_stream(''.join(('Found ', str(attrNbr), ' attributes.')))
+			attrList = attrs.get_attribute_list()
+			self.info_stream(str(type(attrList)))
+			for k in range(attrNbr):
+				attr = attrs.get_attr_by_ind(k)
+				self.info_stream(attr.get_name())
+				self.info_stream(''.join(('Associated write: ', attr.get_assoc_name())))
+				self.info_stream(''.join(('Associated index: ', str(attr.get_assoc_ind()))))
+				if attr.get_assoc_name() != 'None':
+					wAttr = attrs.get_w_attr_by_ind(attr.get_assoc_ind())
+					self.info_stream(''.join((wAttr.get_name())))
 #                     w = wAttr.get_write_value()
 #                     self.info_stream(''.join((wAttr.get_name(),': ', str(w))))
 
@@ -345,306 +346,306 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 
 
-            self.set_status('Connected to oscilloscope, not acquiring')
-            self.info_stream('Initialization finished.')
-            self.set_state(PyTango.DevState.ON)
+			self.set_status('Connected to oscilloscope, not acquiring')
+			self.info_stream('Initialization finished.')
+			self.set_state(PyTango.DevState.ON)
 
-            # Start watchdog
-            self.resetWatchdog()
+			# Start watchdog
+			self.resetWatchdog()
 
-    def standbyHandler(self, prevState):
-        self.info_stream('Entering standbyHandler')
-        self.set_status('Connected to oscilloscope, not acquiring spectra')
-        keepAliveInterval = 0.25
-        t0 = time.clock()
+	def standbyHandler(self, prevState):
+		self.info_stream('Entering standbyHandler')
+		self.set_status('Connected to oscilloscope, not acquiring spectra')
+		keepAliveInterval = 0.25
+		t0 = time.clock()
 
-        while self.stopStateThreadFlag == False:
-            if self.get_state() != PyTango.DevState.STANDBY:
-                break
-            # Check if any new commands arrived:
-            self.checkCommands()
+		while self.stopStateThreadFlag == False:
+			if self.get_state() != PyTango.DevState.STANDBY:
+				break
+			# Check if any new commands arrived:
+			self.checkCommands()
 
-            # Try contacting the redpitaya at regular intervals to make sure it is alive
-            t = time.clock()
-            if t-t0 > keepAliveInterval:
-                t0 = t
-                try:
-                    self.oscilloscope.setTriggerLevel(self.oscilloscope.redPitayaData.triggerLevel)
-                    self.resetWatchdog()
-                except Exception, e:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('standbyHandler error: ', str(e))))
+			# Try contacting the redpitaya at regular intervals to make sure it is alive
+			t = time.clock()
+			if t-t0 > keepAliveInterval:
+				t0 = t
+				try:
+					self.oscilloscope.setTriggerLevel(self.oscilloscope.redPitayaData.triggerLevel)
+					self.resetWatchdog()
+				except Exception, e:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('standbyHandler error: ', str(e))))
 
-            if self.get_state() != PyTango.DevState.STANDBY:
-                break
+			if self.get_state() != PyTango.DevState.STANDBY:
+				break
 
-            # 50 ms sleep to stay responsive and still not bog down the computer
-            time.sleep(0.05)
+			# 50 ms sleep to stay responsive and still not bog down the computer
+			time.sleep(0.05)
 
-    def onHandler(self, prevState):
-        self.info_stream('Entering onHandler')
-        self.set_status('Connected to oscilloscope, acquiring waveforms')
-        handledStates = [PyTango.DevState.ON, PyTango.DevState.ALARM]
-        self.openOscilloscope()
+	def onHandler(self, prevState):
+		self.info_stream('Entering onHandler')
+		self.set_status('Connected to oscilloscope, acquiring waveforms')
+		handledStates = [PyTango.DevState.ON, PyTango.DevState.ALARM]
+		self.openOscilloscope()
 
-        self.sleepTime = 0.01
-        s = ''.join(('Sleeptime: ', str(self.sleepTime)))
-        self.info_stream(s)
-        newWaveformTimestamp = time.time()
-        oldWaveformTimestamp = time.time()
-        nextUpdateTime = time.time()
-        while self.stopStateThreadFlag == False:
-            if self.get_state() not in handledStates:
-                self.info_stream(''.join(('State ', str(self.get_state()), ' not in handled states')))
-                break
+		self.sleepTime = 0.01
+		s = ''.join(('Sleeptime: ', str(self.sleepTime)))
+		self.info_stream(s)
+		newWaveformTimestamp = time.time()
+		oldWaveformTimestamp = time.time()
+		nextUpdateTime = time.time()
+		while self.stopStateThreadFlag == False:
+			if self.get_state() not in handledStates:
+				self.info_stream(''.join(('State ', str(self.get_state()), ' not in handled states')))
+				break
 
-            # Check if any new commands arrived:
-            self.debug_stream('Entering check commands...')
-            self.checkCommands()
-            self.debug_stream('...check commands done')
+			# Check if any new commands arrived:
+			self.debug_stream('Entering check commands...')
+			self.checkCommands()
+			self.debug_stream('...check commands done')
 
-            # Check if we should break this loop and go to a new state handler:
-            if self.get_state() not in handledStates:
-                self.info_stream(''.join(('2.. State ', str(self.get_state()), ' not in handled states')))
-                break
+			# Check if we should break this loop and go to a new state handler:
+			if self.get_state() not in handledStates:
+				self.info_stream(''.join(('2.. State ', str(self.get_state()), ' not in handled states')))
+				break
 
-            try:
-                ts = time.time()
-                if ts > nextUpdateTime:
-                    self.debug_stream('Acquiring waveform...')
-                    # Update waveforms
-                    try:
-                        triggerStatus = False
-                        triggerStatus = self.oscilloscope.updateWaveforms()
-                        self.resetWatchdog()
-                    except Exception, e:
-                        self.error_stream(str(e))
-                    self.debug_stream('Acquiring waveform done.')
-                    newWaveformTimestamp = time.time()
-                    # Check if we got a fresh trigg event:
-                    if triggerStatus == False:
-                        # No, so check if the delay is long (>0.3 s), the flag it as waiting for trigger
-                        if newWaveformTimestamp - oldWaveformTimestamp > 0.3:
-                            self.redPitayaData.triggerWait = True
-                    else:
-                        # Yes, so flag it as not waiting for trigger and update timestamp
-                        self.redPitayaData.triggerWait = False
-                        oldWaveformTimestamp = newWaveformTimestamp
+			try:
+				ts = time.time()
+				if ts > nextUpdateTime:
+					self.debug_stream('Acquiring waveform...')
+					# Update waveforms
+					try:
+						triggerStatus = False
+						triggerStatus = self.oscilloscope.updateWaveforms()
+						self.resetWatchdog()
+					except Exception, e:
+						self.error_stream(str(e))
+					self.debug_stream('Acquiring waveform done.')
+					newWaveformTimestamp = time.time()
+					# Check if we got a fresh trigg event:
+					if triggerStatus == False:
+						# No, so check if the delay is long (>0.3 s), the flag it as waiting for trigger
+						if newWaveformTimestamp - oldWaveformTimestamp > 0.3:
+							self.redPitayaData.triggerWait = True
+					else:
+						# Yes, so flag it as not waiting for trigger and update timestamp
+						self.redPitayaData.triggerWait = False
+						oldWaveformTimestamp = newWaveformTimestamp
 
-                        # Calculate measurements
-                        self.debug_stream('Getting waveforms.')
-                        w1 = self.oscilloscope.getWaveform(1)
-                        self.redPitayaData.waveform1 = w1
-                        w2 = self.oscilloscope.getWaveform(2)
-                        self.redPitayaData.waveform2 = w2
-                        t = self.oscilloscope.redPitayaData.timevector
-                        self.redPitayaData.timevector = t
-                        self.debug_stream('Waveforms gotten.')
+						# Calculate measurements
+						self.debug_stream('Getting waveforms.')
+						w1 = self.oscilloscope.getWaveform(1)
+						self.redPitayaData.waveform1 = w1
+						w2 = self.oscilloscope.getWaveform(2)
+						self.redPitayaData.waveform2 = w2
+						t = self.oscilloscope.redPitayaData.timevector
+						self.redPitayaData.timevector = t
+						self.debug_stream('Waveforms gotten.')
 
-                        for i, s in enumerate(self.measurementStrings):
-                            try:
-                                self.measurementData[i] = eval(s)
-                            except Exception, e:
-                                self.measurementData[i] = None
-                        self.debug_stream('Measurements calculated.')
+						for i, s in enumerate(self.measurementStrings):
+							try:
+								self.measurementData[i] = eval(s)
+							except Exception, e:
+								self.measurementData[i] = None
+						self.debug_stream('Measurements calculated.')
 
-                time.sleep(self.sleepTime)
+				time.sleep(self.sleepTime)
 
-            except Exception, e:
-                self.set_state(PyTango.DevState.FAULT)
-                self.set_status('Error reading hardware.')
-                self.error_stream(''.join(('onHandler error: ', str(e))))
-
-
-    def alarmHandler(self, prevState):
-        pass
+			except Exception, e:
+				self.set_state(PyTango.DevState.FAULT)
+				self.set_status('Error reading hardware.')
+				self.error_stream(''.join(('onHandler error: ', str(e))))
 
 
-    def faultHandler(self, prevState):
-        responseAttempts = 0
-        maxAttempts = 5
-        responseTimeout = 0.5
-        self.info_stream('Entering faultHandler.')
-        self.set_status('Fault condition detected')
-
-        while self.get_state() == PyTango.DevState.FAULT:
-            try:
-                self.oscilloscope.close()
-                time.sleep(1.5)
-                self.oscilloscope.connect(self.IPaddress, self.Port)
-
-                self.set_state(prevState)
-                self.info_stream('Fault condition cleared.')
-                break
-            except Exception, e:
-                self.error_stream(''.join(('In faultHandler: Testing controller response. Returned ', str(e))))
-                responseAttempts += 1
-            if responseAttempts >= maxAttempts:
-                self.set_state(PyTango.DevState.UNKNOWN)
-                self.set_status('Could not connect to controller')
-                self.error_stream('Giving up fault handling. Going to UNKNOWN state.')
-                break
-            time.sleep(responseTimeout)
+	def alarmHandler(self, prevState):
+		pass
 
 
-    def offHandler(self, prevState):
-        self.info_stream('Entering offHandler')
-        try:
-            self.oscilloscope.close()
-        except Exception, e:
-            self.error_stream(''.join(('Could not disconnect from oscilloscope, ', str(e))))
+	def faultHandler(self, prevState):
+		responseAttempts = 0
+		maxAttempts = 5
+		responseTimeout = 0.5
+		self.info_stream('Entering faultHandler.')
+		self.set_status('Fault condition detected')
 
-        self.set_status('Disconnected from oscilloscope')
-        while self.stopStateThreadFlag == False:
-            if self.get_state() != PyTango.DevState.OFF:
-                break
-            # Check if any new commands arrived:
-            self.checkCommands()
-            if self.get_state() != PyTango.DevState.OFF:
-                break
+		while self.get_state() == PyTango.DevState.FAULT:
+			try:
+				self.oscilloscope.close()
+				time.sleep(1.5)
+				self.oscilloscope.connect(self.IPaddress, self.Port)
 
-            time.sleep(0.1)
+				self.set_state(prevState)
+				self.info_stream('Fault condition cleared.')
+				break
+			except Exception, e:
+				self.error_stream(''.join(('In faultHandler: Testing controller response. Returned ', str(e))))
+				responseAttempts += 1
+			if responseAttempts >= maxAttempts:
+				self.set_state(PyTango.DevState.UNKNOWN)
+				self.set_status('Could not connect to controller')
+				self.error_stream('Giving up fault handling. Going to UNKNOWN state.')
+				break
+			time.sleep(responseTimeout)
 
-    def checkCommands(self):
-        try:
-            cmd = self.commandQueue.get(block=False)
-            self.info_stream(str(cmd.command))
-            if cmd.command == 'writeTriggerSource':
-                try:
-                    self.oscilloscope.setTriggerSource(cmd.data)
-                except ValueError, e:
-                    self.error_stream(''.join(('ValueError: ', str(e))))
-                except:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('Hardware Error: ', str(e))))
-            elif cmd.command == 'writeTriggerMode':
-                try:
-                    self.oscilloscope.setTriggerMode(cmd.data)
-                except ValueError, e:
-                    self.error_stream(''.join(('ValueError: ', str(e))))
-                except:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('Hardware Error: ', str(e))))
-            elif cmd.command == 'writeRecordLength':
-                try:
-                    self.oscilloscope.setRecordLength(cmd.data)
-                except ValueError, e:
-                    self.error_stream(''.join(('ValueError: ', str(e))))
-                except:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('Hardware Error: ', str(e))))
-            elif cmd.command == 'writeDecimationFactor':
-                try:
-                    self.oscilloscope.setDecimationFactor(cmd.data)
-                except ValueError, e:
-                    self.error_stream(''.join(('ValueError: ', str(e))))
-                except:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('Hardware Error: ', str(e))))
-            elif cmd.command == 'writeSampleRate':
-                decArray = np.array([1, 8, 64, 1024, 8192, 16384])
-                sampleRateArray = 125e6 / decArray
-                sampleIndex = max(0, np.argmin(sampleRateArray > cmd.data) - 1)
-                self.info_stream('writeSampleRate:')
-                self.info_stream(''.join(('sampleIndex: ', str(sampleIndex))))
-                try:
-                    self.oscilloscope.setDecimationFactor(sampleIndex)
-                except ValueError, e:
-                    self.error_stream(''.join(('ValueError: ', str(e))))
-                except:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('Hardware Error: ', str(e))))
-            elif cmd.command == 'writeTriggerLevel':
-                try:
-                    self.oscilloscope.setTriggerLevel(cmd.data)
-                except ValueError, e:
-                    self.error_stream(''.join(('ValueError: ', str(e))))
-                except:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('Hardware Error: ', str(e))))
-            elif cmd.command == 'writeTriggerDelay':
-                try:
-                    self.oscilloscope.setTriggerDelay(cmd.data)
-                except ValueError, e:
-                    self.error_stream(''.join(('ValueError: ', str(e))))
-                except:
-                    self.set_state(PyTango.DevState.FAULT)
-                    self.set_status('Error reading hardware.')
-                    self.error_stream(''.join(('Hardware Error: ', str(e))))
-            elif cmd.command == 'writeMeasurementString1':
-                self.measurementStrings[0] = cmd.data
-            elif cmd.command == 'writeMeasurementString2':
-                self.measurementStrings[1] = cmd.data
-            elif cmd.command == 'writeMeasurementString3':
-                self.measurementStrings[2] = cmd.data
-            elif cmd.command == 'writeMeasurementString4':
-                self.measurementStrings[3] = cmd.data
 
-            elif cmd.command == 'start':
+	def offHandler(self, prevState):
+		self.info_stream('Entering offHandler')
+		try:
+			self.oscilloscope.close()
+		except Exception, e:
+			self.error_stream(''.join(('Could not disconnect from oscilloscope, ', str(e))))
 
-                self.set_state(PyTango.DevState.ON)
+		self.set_status('Disconnected from oscilloscope')
+		while self.stopStateThreadFlag == False:
+			if self.get_state() != PyTango.DevState.OFF:
+				break
+			# Check if any new commands arrived:
+			self.checkCommands()
+			if self.get_state() != PyTango.DevState.OFF:
+				break
+
+			time.sleep(0.1)
+
+	def checkCommands(self):
+		try:
+			cmd = self.commandQueue.get(block=False)
+			self.info_stream(str(cmd.command))
+			if cmd.command == 'writeTriggerSource':
+				try:
+					self.oscilloscope.setTriggerSource(cmd.data)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except Exception, e:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeTriggerMode':
+				try:
+					self.oscilloscope.setTriggerMode(cmd.data)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeRecordLength':
+				try:
+					self.oscilloscope.setRecordLength(cmd.data)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except Exception, e:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeDecimationFactor':
+				try:
+					self.oscilloscope.setDecimationFactor(cmd.data)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except Exception, e:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeSampleRate':
+				decArray = np.array([1, 8, 64, 1024, 8192, 16384])
+				sampleRateArray = 125e6 / decArray
+				sampleIndex = max(0, np.argmin(sampleRateArray > cmd.data) - 1)
+				self.info_stream('writeSampleRate:')
+				self.info_stream(''.join(('sampleIndex: ', str(sampleIndex))))
+				try:
+					self.oscilloscope.setDecimationFactor(sampleIndex)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except Exception, e:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeTriggerLevel':
+				try:
+					self.oscilloscope.setTriggerLevel(cmd.data)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except Exception, e:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeTriggerDelay':
+				try:
+					self.oscilloscope.setTriggerDelayTime(cmd.data)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except Exception, e:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeMeasurementString1':
+				self.measurementStrings[0] = cmd.data
+			elif cmd.command == 'writeMeasurementString2':
+				self.measurementStrings[1] = cmd.data
+			elif cmd.command == 'writeMeasurementString3':
+				self.measurementStrings[2] = cmd.data
+			elif cmd.command == 'writeMeasurementString4':
+				self.measurementStrings[3] = cmd.data
+
+			elif cmd.command == 'start':
+
+				self.set_state(PyTango.DevState.ON)
 #                 self.startHardwareThread()
 
-            elif cmd.command == 'stop':
-                self.set_state(PyTango.DevState.STANDBY)
+			elif cmd.command == 'stop':
+				self.set_state(PyTango.DevState.STANDBY)
 
-            elif cmd.command == 'off':
-                self.set_state(PyTango.DevState.OFF)
-            elif cmd.command == 'test':
-                attrs = self.get_device_attr()
-                apa = attrs.get_w_attr_by_name('triggerlevel')
-                print 'test triggermode:', repr(apa.get_write_value())
-                print type(apa.get_write_value())
-                print apa.get_write_value_length()
+			elif cmd.command == 'off':
+				self.set_state(PyTango.DevState.OFF)
+			elif cmd.command == 'test':
+				attrs = self.get_device_attr()
+				apa = attrs.get_w_attr_by_name('triggerlevel')
+				print 'test triggermode:', repr(apa.get_write_value())
+				print type(apa.get_write_value())
+				print apa.get_write_value_length()
 
-        except Queue.Empty:
-            pass
+		except Queue.Empty:
+			pass
 
-    def openOscilloscope(self):
-        # If the device was closed, we open it again
-        if self.oscilloscope.connected == False:
-            self.info_stream('In openOscilloscope: scope was disconnected, attempting connect')
-            try:
-                self.oscilloscope.connect(self.IPaddress, self.Port)
-            except Exception, e:
-                self.error_stream(''.join(('Could not open device ', str(self.IPaddress), ', ', str(e))))
-                self.set_state(PyTango.DevState.FAULT)
-                self.set_status(''.join(('Could not open device ', str(self.IPaddress))))
+	def openOscilloscope(self):
+		# If the device was closed, we open it again
+		if self.oscilloscope.connected == False:
+			self.info_stream('In openOscilloscope: scope was disconnected, attempting connect')
+			try:
+				self.oscilloscope.connect(self.IPaddress, self.Port)
+			except Exception, e:
+				self.error_stream(''.join(('Could not open device ', str(self.IPaddress), ', ', str(e))))
+				self.set_state(PyTango.DevState.FAULT)
+				self.set_status(''.join(('Could not open device ', str(self.IPaddress))))
 
-    def resetWatchdog(self):
-        try:
-            self.watchdogTimer.cancel()
-        except:
-            pass
-        self.watchdogTimer = threading.Timer(self.WatchdogTimeout, self.watchdogHandler)
-        self.watchdogTimer.start()
+	def resetWatchdog(self):
+		try:
+			self.watchdogTimer.cancel()
+		except:
+			pass
+		self.watchdogTimer = threading.Timer(self.WatchdogTimeout, self.watchdogHandler)
+		self.watchdogTimer.start()
 
-    def stopWatchdog(self):
-        try:
-            self.watchdogTimer.cancel()
-        except:
-            pass
+	def stopWatchdog(self):
+		try:
+			self.watchdogTimer.cancel()
+		except:
+			pass
 
-    def watchdogHandler(self):
-        self.info_stream('Watchdog timed out. Execute init device.')
-        self.init_device()
+	def watchdogHandler(self):
+		self.info_stream('Watchdog timed out. Execute init device.')
+#		self.init_device()
 
-    def stopStateThread(self):
-        self.info_stream('Stopping thread...')
-        self.stopStateThreadFlag = True
-        if self.stateThread.isAlive() == True:
-            self.info_stream('It was alive.')
-            self.stateThread.join(3)
-        self.info_stream('Now stopped.')
-        self.stopStateThreadFlag = False
-        self.set_state(PyTango.DevState.UNKNOWN)
+	def stopStateThread(self):
+		self.info_stream('Stopping thread...')
+		self.stopStateThreadFlag = True
+		if self.stateThread.isAlive() == True:
+			self.info_stream('It was alive.')
+			self.stateThread.join(3)
+		self.info_stream('Now stopped.')
+		self.stopStateThreadFlag = False
+		self.set_state(PyTango.DevState.UNKNOWN)
 
 #==================================================================
 #
@@ -654,510 +655,510 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #------------------------------------------------------------------
 #    Read Attribute Hardware
 #------------------------------------------------------------------
-    def read_attr_hardware(self, data):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_attr_hardware()")))
+	def read_attr_hardware(self, data):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_attr_hardware()")))
 
 
 
 #------------------------------------------------------------------
 #    Read TriggerSource attribute
 #------------------------------------------------------------------
-    def read_TriggerSource(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerSource()")))
+	def read_TriggerSource(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerSource()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_TriggerSource_read = self.oscilloscope.getTriggerSource()
-        attr.set_value(attr_TriggerSource_read)
+		attr_TriggerSource_read = self.oscilloscope.getTriggerSource()
+		attr.set_value(attr_TriggerSource_read)
 
 
 #------------------------------------------------------------------
 #    Write TriggerSource attribute
 #------------------------------------------------------------------
-    def write_TriggerSource(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerSource()")))
-        data = attr.get_write_value()
+	def write_TriggerSource(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerSource()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeTriggerSource', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeTriggerSource', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- TriggerSource attribute State Machine -----------------
-    def is_TriggerSource_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_TriggerSource_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 
 #------------------------------------------------------------------
 #    Read TriggerMode attribute
 #------------------------------------------------------------------
-    def read_TriggerMode(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerMode()")))
+	def read_TriggerMode(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerMode()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_TriggerMode_read = self.oscilloscope.getTriggerMode()
-        attr.set_value(attr_TriggerMode_read)
+		attr_TriggerMode_read = self.oscilloscope.getTriggerMode()
+		attr.set_value(attr_TriggerMode_read)
 
 
 #------------------------------------------------------------------
 #    Write TriggerMode attribute
 #------------------------------------------------------------------
-    def write_TriggerMode(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerMode()")))
-        data = attr.get_write_value()
+	def write_TriggerMode(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerMode()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeTriggerMode', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeTriggerMode', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- TriggerMode attribute State Machine -----------------
-    def is_TriggerMode_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_TriggerMode_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read TriggerLevel attribute
 #------------------------------------------------------------------
-    def read_TriggerLevel(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerLevel()")))
+	def read_TriggerLevel(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerLevel()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_TriggerLevel_read = self.oscilloscope.getTriggerLevel()
-        attr.set_value(attr_TriggerLevel_read)
+		attr_TriggerLevel_read = self.oscilloscope.getTriggerLevel()
+		attr.set_value(attr_TriggerLevel_read)
 
 
 #------------------------------------------------------------------
 #    Write TriggerLevel attribute
 #------------------------------------------------------------------
-    def write_TriggerLevel(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerLevel()")))
-        data = attr.get_write_value()
+	def write_TriggerLevel(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerLevel()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeTriggerLevel', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeTriggerLevel', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- TriggerLevel attribute State Machine -----------------
-    def is_TriggerLevel_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_TriggerLevel_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read TriggerDelay attribute
 #------------------------------------------------------------------
-    def read_TriggerDelay(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerDelay()")))
+	def read_TriggerDelay(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerDelay()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_TriggerDelay_read = self.oscilloscope.getTriggerDelay()
-        attr.set_value(attr_TriggerDelay_read)
+		attr_TriggerDelay_read = self.oscilloscope.getTriggerDelayTime()
+		attr.set_value(attr_TriggerDelay_read)
 
 
 #------------------------------------------------------------------
 #    Write TriggerDelay attribute
 #------------------------------------------------------------------
-    def write_TriggerDelay(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerDelay()")))
-        data = attr.get_write_value()
+	def write_TriggerDelay(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerDelay()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeTriggerDelay', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeTriggerDelay', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- TriggerDelay attribute State Machine -----------------
-    def is_TriggerDelay_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_TriggerDelay_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read TriggerWait attribute
 #------------------------------------------------------------------
-    def read_TriggerWait(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerWait()")))
+	def read_TriggerWait(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerWait()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_TriggerWait_read = self.redPitayaData.triggerWait
-        attr.set_value(attr_TriggerWait_read)
+		attr_TriggerWait_read = self.redPitayaData.triggerWait
+		attr.set_value(attr_TriggerWait_read)
 
 
 #---- TriggerWait attribute State Machine -----------------
-    def is_TriggerWait_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_TriggerWait_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 
 #------------------------------------------------------------------
 #    Read RecordLength attribute
 #------------------------------------------------------------------
-    def read_RecordLength(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_RecordLength()")))
+	def read_RecordLength(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_RecordLength()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_RecordLength_read = self.oscilloscope.getRecordLength()
-        attr.set_value(attr_RecordLength_read)
+		attr_RecordLength_read = self.oscilloscope.getRecordLength()
+		attr.set_value(attr_RecordLength_read)
 
 
 #------------------------------------------------------------------
 #    Write RecordLength attribute
 #------------------------------------------------------------------
-    def write_RecordLength(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_RecordLength()")))
-        data = attr.get_write_value()
+	def write_RecordLength(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_RecordLength()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeRecordLength', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeRecordLength', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- RecordLength attribute State Machine -----------------
-    def is_RecordLength_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_RecordLength_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read SampleRate attribute
 #------------------------------------------------------------------
-    def read_SampleRate(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_SampleRate()")))
+	def read_SampleRate(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_SampleRate()")))
 
-        #    Add your own code here
-        df = self.oscilloscope.getDecimationFactor()
-        decDict = {0: 1,
-                   1: 8,
-                   2: 64,
-                   3: 1024,
-                   4: 8192,
-                   5: 16384}
-        attr_SampleRate_read = 125e6 / decDict[df]
-        attr.set_value(attr_SampleRate_read)
+		#    Add your own code here
+		df = self.oscilloscope.getDecimationFactor()
+		decDict = {0: 1,
+				   1: 8,
+				   2: 64,
+				   3: 1024,
+				   4: 8192,
+				   5: 16384}
+		attr_SampleRate_read = 125e6 / decDict[df]
+		attr.set_value(attr_SampleRate_read)
 
 
 #------------------------------------------------------------------
 #    Write SampleRate attribute
 #------------------------------------------------------------------
-    def write_SampleRate(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_SampleRate()")))
-        data = attr.get_write_value()
+	def write_SampleRate(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_SampleRate()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeSampleRate', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeSampleRate', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- SampleRate attribute State Machine -----------------
-    def is_SampleRate_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_SampleRate_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 
 #------------------------------------------------------------------
 #    Read TimeVector attribute
 #------------------------------------------------------------------
-    def read_TimeVector(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_TimeVector()")))
+	def read_TimeVector(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_TimeVector()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_TimeVector_read = self.oscilloscope.getTimevector()
-        attr.set_value(attr_TimeVector_read, attr_TimeVector_read.shape[0])
+		attr_TimeVector_read = self.oscilloscope.getTimevector()
+		attr.set_value(attr_TimeVector_read, attr_TimeVector_read.shape[0])
 
 #---- TimeVector attribute State Machine -----------------
-    def is_TimeVector_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_TimeVector_allowed(self, req_type):
+		if self.get_state() in [PyTango.DevState.OFF,
+								PyTango.DevState.FAULT,
+								PyTango.DevState.UNKNOWN]:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read Waveform1 attribute
 #------------------------------------------------------------------
-    def read_Waveform1(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_Waveform1()")))
+	def read_Waveform1(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_Waveform1()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_data_read = self.redPitayaData.waveform1
-        attr.set_value(attr_data_read, attr_data_read.shape[0])
+		attr_data_read = self.redPitayaData.waveform1
+		attr.set_value(attr_data_read, attr_data_read.shape[0])
 
 #---- Waveform1 attribute State Machine -----------------
-    def is_Waveform1_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_Waveform1_allowed(self, req_type):
+		if self.get_state() in [PyTango.DevState.OFF,
+								PyTango.DevState.FAULT,
+								PyTango.DevState.UNKNOWN]:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read Waveform2 attribute
 #------------------------------------------------------------------
-    def read_Waveform2(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_Waveform2()")))
+	def read_Waveform2(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_Waveform2()")))
 
-        #    Add your own code here
+		#    Add your own code here
 
-        attr_data_read = self.redPitayaData.waveform2
-        attr.set_value(attr_data_read, attr_data_read.shape[0])
+		attr_data_read = self.redPitayaData.waveform2
+		attr.set_value(attr_data_read, attr_data_read.shape[0])
 
 #---- Waveform2 attribute State Machine -----------------
-    def is_Waveform2_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_Waveform2_allowed(self, req_type):
+		if self.get_state() in [PyTango.DevState.OFF,
+								PyTango.DevState.FAULT,
+								PyTango.DevState.UNKNOWN]:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementString1 attribute
 #------------------------------------------------------------------
-    def read_MeasurementString1(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString1()")))
+	def read_MeasurementString1(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString1()")))
 
-        #    Add your own code here
-        attr_MeasurementString1_read = self.measurementStrings[0]
-        attr.set_value(attr_MeasurementString1_read)
+		#    Add your own code here
+		attr_MeasurementString1_read = self.measurementStrings[0]
+		attr.set_value(attr_MeasurementString1_read)
 
 
 #------------------------------------------------------------------
 #    Write MeasurementString1 attribute
 #------------------------------------------------------------------
-    def write_MeasurementString1(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString1()")))
-        data = attr.get_write_value()
+	def write_MeasurementString1(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString1()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeMeasurementString1', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeMeasurementString1', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- MeasurementString1 attribute State Machine -----------------
-    def is_MeasurementString1_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementString1_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementString2 attribute
 #------------------------------------------------------------------
-    def read_MeasurementString2(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString2()")))
+	def read_MeasurementString2(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString2()")))
 
-        #    Add your own code here
-        attr_MeasurementString2_read = self.measurementStrings[1]
-        attr.set_value(attr_MeasurementString2_read)
+		#    Add your own code here
+		attr_MeasurementString2_read = self.measurementStrings[1]
+		attr.set_value(attr_MeasurementString2_read)
 
 
 #------------------------------------------------------------------
 #    Write MeasurementString2 attribute
 #------------------------------------------------------------------
-    def write_MeasurementString2(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString2()")))
-        data = attr.get_write_value()
+	def write_MeasurementString2(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString2()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeMeasurementString2', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeMeasurementString2', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- MeasurementString2 attribute State Machine -----------------
-    def is_MeasurementString2_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementString2_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementString3 attribute
 #------------------------------------------------------------------
-    def read_MeasurementString3(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString3()")))
+	def read_MeasurementString3(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString3()")))
 
-        #    Add your own code here
-        attr_MeasurementString3_read = self.measurementStrings[2]
-        attr.set_value(attr_MeasurementString3_read)
+		#    Add your own code here
+		attr_MeasurementString3_read = self.measurementStrings[2]
+		attr.set_value(attr_MeasurementString3_read)
 
 
 #------------------------------------------------------------------
 #    Write MeasurementString3 attribute
 #------------------------------------------------------------------
-    def write_MeasurementString3(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString3()")))
-        data = attr.get_write_value()
+	def write_MeasurementString3(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString3()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeMeasurementString3', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeMeasurementString3', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- MeasurementString3 attribute State Machine -----------------
-    def is_MeasurementString3_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementString3_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementString4 attribute
 #------------------------------------------------------------------
-    def read_MeasurementString4(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString4()")))
+	def read_MeasurementString4(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementString4()")))
 
-        #    Add your own code here
-        attr_MeasurementString4_read = self.measurementStrings[3]
-        attr.set_value(attr_MeasurementString4_read)
+		#    Add your own code here
+		attr_MeasurementString4_read = self.measurementStrings[3]
+		attr.set_value(attr_MeasurementString4_read)
 
 
 #------------------------------------------------------------------
 #    Write MeasurementString4 attribute
 #------------------------------------------------------------------
-    def write_MeasurementString4(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString4()")))
-        data = attr.get_write_value()
+	def write_MeasurementString4(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_MeasurementString4()")))
+		data = attr.get_write_value()
 
-        #     Add your own code here
-        self.commandQueue.put(DeviceCommand('writeMeasurementString4', data))
-        self.info_stream(''.join(("Attribute value = ", str(data))))
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeMeasurementString4', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
 
-        #    Add your own code here
+		#    Add your own code here
 
 #---- MeasurementString4 attribute State Machine -----------------
-    def is_MeasurementString4_allowed(self, req_type):
-        if self.get_state() in []:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementString4_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementData1 attribute
 #------------------------------------------------------------------
-    def read_MeasurementData1(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData1()")))
+	def read_MeasurementData1(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData1()")))
 
-        #    Add your own code here
-        attr_MeasurementData1_read = self.measurementData[0]
-        if attr_MeasurementData1_read == None:
-            attr.set_quality(PyTango.AttrQuality.ATTR_INVALID)
-        attr.set_value(attr_MeasurementData1_read)
+		#    Add your own code here
+		attr_MeasurementData1_read = self.measurementData[0]
+		if attr_MeasurementData1_read == None:
+			attr.set_quality(PyTango.AttrQuality.ATTR_INVALID)
+		attr.set_value(attr_MeasurementData1_read)
 
 #---- MeasurementData1 attribute State Machine -----------------
-    def is_MeasurementData1_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementData1_allowed(self, req_type):
+		if self.get_state() in [PyTango.DevState.OFF,
+								PyTango.DevState.FAULT,
+								PyTango.DevState.UNKNOWN]:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementData2 attribute
 #------------------------------------------------------------------
-    def read_MeasurementData2(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData2()")))
+	def read_MeasurementData2(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData2()")))
 
-        #    Add your own code here
-        attr_MeasurementData2_read = self.measurementData[1]
-        attr.set_value(attr_MeasurementData2_read)
+		#    Add your own code here
+		attr_MeasurementData2_read = self.measurementData[1]
+		attr.set_value(attr_MeasurementData2_read)
 
 #---- MeasurementData2 attribute State Machine -----------------
-    def is_MeasurementData2_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementData2_allowed(self, req_type):
+		if self.get_state() in [PyTango.DevState.OFF,
+								PyTango.DevState.FAULT,
+								PyTango.DevState.UNKNOWN]:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementData3 attribute
 #------------------------------------------------------------------
-    def read_MeasurementData3(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData3()")))
+	def read_MeasurementData3(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData3()")))
 
-        #    Add your own code here
-        attr_MeasurementData3_read = self.measurementData[2]
-        attr.set_value(attr_MeasurementData3_read)
+		#    Add your own code here
+		attr_MeasurementData3_read = self.measurementData[2]
+		attr.set_value(attr_MeasurementData3_read)
 
 #---- MeasurementData3 attribute State Machine -----------------
-    def is_MeasurementData3_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementData3_allowed(self, req_type):
+		if self.get_state() in [PyTango.DevState.OFF,
+								PyTango.DevState.FAULT,
+								PyTango.DevState.UNKNOWN]:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 #------------------------------------------------------------------
 #    Read MeasurementData4 attribute
 #------------------------------------------------------------------
-    def read_MeasurementData4(self, attr):
-        self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData4()")))
+	def read_MeasurementData4(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_MeasurementData4()")))
 
-        #    Add your own code here
-        attr_MeasurementData4_read = self.measurementData[3]
-        attr.set_value(attr_MeasurementData4_read)
+		#    Add your own code here
+		attr_MeasurementData4_read = self.measurementData[3]
+		attr.set_value(attr_MeasurementData4_read)
 
 #---- MeasurementData4 attribute State Machine -----------------
-    def is_MeasurementData4_allowed(self, req_type):
-        if self.get_state() in [PyTango.DevState.OFF,
-                                PyTango.DevState.FAULT,
-                                PyTango.DevState.UNKNOWN]:
-            #     End of Generated Code
-            #     Re-Start of Generated Code
-            return False
-        return True
+	def is_MeasurementData4_allowed(self, req_type):
+		if self.get_state() in [PyTango.DevState.OFF,
+								PyTango.DevState.FAULT,
+								PyTango.DevState.UNKNOWN]:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
 
 
 #==================================================================
@@ -1171,30 +1172,30 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #
 #    Description:
 #------------------------------------------------------------------
-    def Start(self):
-        self.info_stream(''.join(("In ", self.get_name(), "::Start()")))
-        #    Add your own code here
-        self.commandQueue.put(DeviceCommand('start'))
+	def Start(self):
+		self.info_stream(''.join(("In ", self.get_name(), "::Start()")))
+		#    Add your own code here
+		self.commandQueue.put(DeviceCommand('start'))
 
 #------------------------------------------------------------------
 #    Stop command:
 #
 #    Description:
 #------------------------------------------------------------------
-    def Stop(self):
-        self.info_stream(''.join(("In ", self.get_name(), "::Stop()")))
-        #    Add your own code here
-        self.commandQueue.put(DeviceCommand('stop'))
+	def Stop(self):
+		self.info_stream(''.join(("In ", self.get_name(), "::Stop()")))
+		#    Add your own code here
+		self.commandQueue.put(DeviceCommand('stop'))
 
 #------------------------------------------------------------------
 #    Test command:
 #
 #    Description:
 #------------------------------------------------------------------
-    def Test(self):
-        self.info_stream(''.join(("In ", self.get_name(), "::Test()")))
-        #    Add your own code here
-        self.commandQueue.put(DeviceCommand('test'))
+	def Test(self):
+		self.info_stream(''.join(("In ", self.get_name(), "::Test()")))
+		#    Add your own code here
+		self.commandQueue.put(DeviceCommand('test'))
 
 #==================================================================
 #
@@ -1203,196 +1204,196 @@ class RedPitayaDS(PyTango.Device_4Impl):
 #==================================================================
 class RedPitayaDSClass(PyTango.DeviceClass):
 
-    #    Class Properties
-    class_property_list = {
-        }
+	#    Class Properties
+	class_property_list = {
+		}
 
 
-    #    Device Properties
-    device_property_list = {
-        'IPaddress':
-            [PyTango.DevString,
-            "IP address of the oscilloscope",
-            [ '130.235.94.21' ] ],
-        'Port':
-            [PyTango.DevString,
-            "Port of the oscilloscope socket",
-            [ 8888 ] ],
-        'WatchdogTimeout':
-            [PyTango.DevDouble,
-            "Timeout for the watchdog resetting the hardware in s",
-            [ 2 ] ],
+	#    Device Properties
+	device_property_list = {
+		'IPaddress':
+			[PyTango.DevString,
+			"IP address of the oscilloscope",
+			[ '130.235.94.21' ] ],
+		'Port':
+			[PyTango.DevString,
+			"Port of the oscilloscope socket",
+			[ 8888 ] ],
+		'WatchdogTimeout':
+			[PyTango.DevDouble,
+			"Timeout for the watchdog resetting the hardware in s",
+			[ 2 ] ],
 
-        }
-
-
-    #    Command definitions
-    cmd_list = {
-        'Start':
-            [[PyTango.DevVoid, ""],
-            [PyTango.DevVoid, ""]],
-        'Stop':
-            [[PyTango.DevVoid, ""],
-            [PyTango.DevVoid, ""]],
-        'Test':
-            [[PyTango.DevVoid, ""],
-            [PyTango.DevVoid, ""]],
-        }
+		}
 
 
-    #    Attribute definitions
-    attr_list = {
-        'TriggerSource':
-            [[PyTango.DevString,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Trigger source. One of channel1, channel2, or external",
-                'Memorized':"true",
-            } ],
-        'TriggerMode':
-            [[PyTango.DevString,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Trigger mode. One of auto, normal, or single",
-                'Memorized':"true",
-            } ],
-        'TriggerLevel':
-            [[PyTango.DevDouble,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Trigger voltage level.",
-                'Memorized':"true",
-                'unit':"V",
-            } ],
-        'TriggerDelay':
-            [[PyTango.DevDouble,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Delay after detected trigger to acquisition start.",
-                'Memorized':"true",
-                'unit':"s"
-            } ],
-        'TriggerWait':
-            [[PyTango.DevBoolean,
-            PyTango.SCALAR,
-            PyTango.READ],
-            {
-                'description':"True if the scope is waiting for a trigger signal",
-            } ],
-        'RecordLength':
-            [[PyTango.DevLong,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Number of samples in the waveform.",
-                'Memorized':"true",
-            } ],
-        'SampleRate':
-            [[PyTango.DevDouble,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Samples per second. Values will be snapped to the next higher factor in 125e6/n (n=1, 8, 64, 1024, 8192, 16384). That is 125, 15.6, 1.95, 0.122, 0.0152, or 0.00762 MSps",
-                'Memorized':"true",
-                'unit': "S/s"
-            } ],
+	#    Command definitions
+	cmd_list = {
+		'Start':
+			[[PyTango.DevVoid, ""],
+			[PyTango.DevVoid, ""]],
+		'Stop':
+			[[PyTango.DevVoid, ""],
+			[PyTango.DevVoid, ""]],
+		'Test':
+			[[PyTango.DevVoid, ""],
+			[PyTango.DevVoid, ""]],
+		}
 
-        'TimeVector':
-            [[PyTango.DevDouble,
-            PyTango.SPECTRUM,
-            PyTango.READ, 16000],
-            {
-                'unit':"s",
-            } ],
-        'Waveform1':
-            [[PyTango.DevDouble,
-            PyTango.SPECTRUM,
-            PyTango.READ, 16000],
-            {
-                'unit':"V",
-            } ],
-        'Waveform2':
-            [[PyTango.DevDouble,
-            PyTango.SPECTRUM,
-            PyTango.READ, 16000],
-            {
-                'unit':"V",
-            } ],
-        'MeasurementString1':
-            [[PyTango.DevString,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Line to evaluate to produce measurement",
-                'Memorized':"true",
-            } ],
-        'MeasurementString2':
-            [[PyTango.DevString,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Line to evaluate to produce measurement",
-                'Memorized':"true",
-            } ],
-        'MeasurementString3':
-            [[PyTango.DevString,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Line to evaluate to produce measurement",
-                'Memorized':"true",
-            } ],
-        'MeasurementString4':
-            [[PyTango.DevString,
-            PyTango.SCALAR,
-            PyTango.READ_WRITE],
-            {
-                'description':"Line to evaluate to produce measurement",
-                'Memorized':"true",
-            } ],
-        'MeasurementData1':
-            [[PyTango.DevDouble,
-            PyTango.SCALAR,
-            PyTango.READ],
-            {
-                'description':"Result of measurement",
-            } ],
-        'MeasurementData2':
-            [[PyTango.DevDouble,
-            PyTango.SCALAR,
-            PyTango.READ],
-            {
-                'description':"Result of measurement",
-            } ],
-        'MeasurementData3':
-            [[PyTango.DevDouble,
-            PyTango.SCALAR,
-            PyTango.READ],
-            {
-                'description':"Result of measurement",
-            } ],
-        'MeasurementData4':
-            [[PyTango.DevDouble,
-            PyTango.SCALAR,
-            PyTango.READ],
-            {
-                'description':"Result of measurement",
-            } ],
 
-        }
+	#    Attribute definitions
+	attr_list = {
+		'TriggerSource':
+			[[PyTango.DevString,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Trigger source. One of channel1, channel2, or external",
+				'Memorized':"true",
+			} ],
+		'TriggerMode':
+			[[PyTango.DevString,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Trigger mode. One of auto, normal, or single",
+				'Memorized':"true",
+			} ],
+		'TriggerLevel':
+			[[PyTango.DevDouble,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Trigger voltage level.",
+				'Memorized':"true",
+				'unit':"V",
+			} ],
+		'TriggerDelay':
+			[[PyTango.DevDouble,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Delay after detected trigger to acquisition start.",
+				'Memorized':"true",
+				'unit':"s"
+			} ],
+		'TriggerWait':
+			[[PyTango.DevBoolean,
+			PyTango.SCALAR,
+			PyTango.READ],
+			{
+				'description':"True if the scope is waiting for a trigger signal",
+			} ],
+		'RecordLength':
+			[[PyTango.DevLong,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Number of samples in the waveform.",
+				'Memorized':"true",
+			} ],
+		'SampleRate':
+			[[PyTango.DevDouble,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Samples per second. Values will be snapped to the next higher factor in 125e6/n (n=1, 8, 64, 1024, 8192, 16384). That is 125, 15.6, 1.95, 0.122, 0.0152, or 0.00762 MSps",
+				'Memorized':"true",
+				'unit': "S/s"
+			} ],
+
+		'TimeVector':
+			[[PyTango.DevDouble,
+			PyTango.SPECTRUM,
+			PyTango.READ, 16384],
+			{
+				'unit':"s",
+			} ],
+		'Waveform1':
+			[[PyTango.DevDouble,
+			PyTango.SPECTRUM,
+			PyTango.READ, 16384],
+			{
+				'unit':"V",
+			} ],
+		'Waveform2':
+			[[PyTango.DevDouble,
+			PyTango.SPECTRUM,
+			PyTango.READ, 16384],
+			{
+				'unit':"V",
+			} ],
+		'MeasurementString1':
+			[[PyTango.DevString,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Line to evaluate to produce measurement",
+				'Memorized':"true",
+			} ],
+		'MeasurementString2':
+			[[PyTango.DevString,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Line to evaluate to produce measurement",
+				'Memorized':"true",
+			} ],
+		'MeasurementString3':
+			[[PyTango.DevString,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Line to evaluate to produce measurement",
+				'Memorized':"true",
+			} ],
+		'MeasurementString4':
+			[[PyTango.DevString,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Line to evaluate to produce measurement",
+				'Memorized':"true",
+			} ],
+		'MeasurementData1':
+			[[PyTango.DevDouble,
+			PyTango.SCALAR,
+			PyTango.READ],
+			{
+				'description':"Result of measurement",
+			} ],
+		'MeasurementData2':
+			[[PyTango.DevDouble,
+			PyTango.SCALAR,
+			PyTango.READ],
+			{
+				'description':"Result of measurement",
+			} ],
+		'MeasurementData3':
+			[[PyTango.DevDouble,
+			PyTango.SCALAR,
+			PyTango.READ],
+			{
+				'description':"Result of measurement",
+			} ],
+		'MeasurementData4':
+			[[PyTango.DevDouble,
+			PyTango.SCALAR,
+			PyTango.READ],
+			{
+				'description':"Result of measurement",
+			} ],
+
+		}
 
 
 #------------------------------------------------------------------
 #    RedPitayaDSClass Constructor
 #------------------------------------------------------------------
-    def __init__(self, name):
-        PyTango.DeviceClass.__init__(self, name)
-        self.set_type(name);
-        print "In RedPitayaDSClass  constructor"
+	def __init__(self, name):
+		PyTango.DeviceClass.__init__(self, name)
+		self.set_type(name);
+		print "In RedPitayaDSClass  constructor"
 
 #==================================================================
 #
@@ -1400,15 +1401,15 @@ class RedPitayaDSClass(PyTango.DeviceClass):
 #
 #==================================================================
 if __name__ == '__main__':
-    try:
-        py = PyTango.Util(sys.argv)
-        py.add_TgClass(RedPitayaDSClass, RedPitayaDS, 'RedPitayaDS')
+	try:
+		py = PyTango.Util(sys.argv)
+		py.add_TgClass(RedPitayaDSClass, RedPitayaDS, 'RedPitayaDS')
 
-        U = PyTango.Util.instance()
-        U.server_init()
-        U.server_run()
+		U = PyTango.Util.instance()
+		U.server_init()
+		U.server_run()
 
-    except PyTango.DevFailed, e:
-        print '-------> Received a DevFailed exception:', e
-    except Exception, e:
-        print '-------> An unforeseen exception occured....', e
+	except PyTango.DevFailed, e:
+		print '-------> Received a DevFailed exception:', e
+	except Exception, e:
+		print '-------> An unforeseen exception occured....', e
