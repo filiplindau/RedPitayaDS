@@ -529,6 +529,15 @@ class RedPitayaDS(PyTango.Device_4Impl):
 					self.set_state(PyTango.DevState.FAULT)
 					self.set_status('Error reading hardware.')
 					self.error_stream(''.join(('Hardware Error: ', str(e))))
+			elif cmd.command == 'writeTriggerEdge':
+				try:
+					self.oscilloscope.setTriggerEdge(cmd.data)
+				except ValueError, e:
+					self.error_stream(''.join(('ValueError: ', str(e))))
+				except:
+					self.set_state(PyTango.DevState.FAULT)
+					self.set_status('Error reading hardware.')
+					self.error_stream(''.join(('Hardware Error: ', str(e))))
 			elif cmd.command == 'writeRecordLength':
 				try:
 					self.oscilloscope.setRecordLength(cmd.data)
@@ -726,6 +735,40 @@ class RedPitayaDS(PyTango.Device_4Impl):
 			#     Re-Start of Generated Code
 			return False
 		return True
+
+#------------------------------------------------------------------
+#    Read TriggerEdge attribute
+#------------------------------------------------------------------
+	def read_TriggerEdge(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::read_TriggerEdge()")))
+
+		#    Add your own code here
+
+		attr_TriggerEdge_read = self.oscilloscope.getTriggerEdge()
+		attr.set_value(attr_TriggerEdge_read)
+
+
+#------------------------------------------------------------------
+#    Write TriggerEdge attribute
+#------------------------------------------------------------------
+	def write_TriggerEdge(self, attr):
+		self.info_stream(''.join(("In ", self.get_name(), "::write_TriggerEdge()")))
+		data = attr.get_write_value()
+
+		#     Add your own code here
+		self.commandQueue.put(DeviceCommand('writeTriggerEdge', data))
+		self.info_stream(''.join(("Attribute value = ", str(data))))
+
+		#    Add your own code here
+
+#---- TriggerEdge attribute State Machine -----------------
+	def is_TriggerEdge_allowed(self, req_type):
+		if self.get_state() in []:
+			#     End of Generated Code
+			#     Re-Start of Generated Code
+			return False
+		return True
+
 
 #------------------------------------------------------------------
 #    Read TriggerLevel attribute
@@ -1257,6 +1300,14 @@ class RedPitayaDSClass(PyTango.DeviceClass):
 			PyTango.READ_WRITE],
 			{
 				'description':"Trigger mode. One of auto, normal, or single",
+				'Memorized':"true",
+			} ],
+		'TriggerEdge':
+			[[PyTango.DevString,
+			PyTango.SCALAR,
+			PyTango.READ_WRITE],
+			{
+				'description':"Trigger edge. One of positive, or negative",
 				'Memorized':"true",
 			} ],
 		'TriggerLevel':

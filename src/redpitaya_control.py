@@ -205,7 +205,10 @@ class RedPitaya_control(object):
 		self.setTriggerSourceEdge(source, sp)
 
 	def getTriggerEdge(self):
-		return self.redPitayaData.triggerEdge
+		if self.redPitayaData.triggerEdge == 'pe':
+			return 'POSITIVE'
+		else:
+			return 'NEGATIVE'
 
 	def setRecordLength(self, recLength):
 		if recLength > 12000:
