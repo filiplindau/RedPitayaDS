@@ -367,7 +367,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 
 			# Try contacting the redpitaya at regular intervals to make sure it is alive
 			t = time.clock()
-			if t-t0 > keepAliveInterval:
+			if t - t0 > keepAliveInterval:
 				t0 = t
 				try:
 					self.oscilloscope.setTriggerLevel(self.oscilloscope.redPitayaData.triggerLevel)
@@ -389,7 +389,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 		handledStates = [PyTango.DevState.ON, PyTango.DevState.ALARM]
 		self.openOscilloscope()
 
-		self.sleepTime = 0.01
+		self.sleepTime = 0.050
 		s = ''.join(('Sleeptime: ', str(self.sleepTime)))
 		self.info_stream(s)
 		newWaveformTimestamp = time.time()
@@ -423,9 +423,9 @@ class RedPitayaDS(PyTango.Device_4Impl):
 						self.error_stream(str(e))
 					self.debug_stream('Acquiring waveform done.')
 					newWaveformTimestamp = time.time()
-					# Check if we got a fresh trigg event:
+					# Check if we got a fresh trig event:
 					if triggerStatus == False:
-						# No, so check if the delay is long (>0.3 s), the flag it as waiting for trigger
+						# No, so check if the delay is long (>0.3 s), then flag it as waiting for trigger
 						if newWaveformTimestamp - oldWaveformTimestamp > 0.3:
 							self.redPitayaData.triggerWait = True
 					else:
