@@ -421,6 +421,7 @@ class RedPitayaDS(PyTango.Device_4Impl):
 						self.resetWatchdog()
 					except Exception, e:
 						self.error_stream(str(e))
+						self.set_state(PyTango.DevState.FAULT)
 					self.debug_stream('Acquiring waveform done.')
 					newWaveformTimestamp = time.time()
 					# Check if we got a fresh trig event:

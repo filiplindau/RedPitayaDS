@@ -11,7 +11,7 @@ import time
 
 class RedPitayaData(object):
 	def __init__(self):
-		self.triggerMode = 'AUTO'
+		self.triggerMode = 'NORMAL'
 		self.triggerSource = 'CHANNEL1'
 		self.triggerEdge = 'pe'
 		self.triggerLevel = 0.0
@@ -173,17 +173,20 @@ class RedPitaya_control(object):
 
 	def setTriggerMode(self, mode):
 		sp = str(mode).lower()
-		if sp in ['auto', 'a']:
-			sp = 'auto'
-			cmdMsg = 'AUTO'
-		elif sp in ['normal', 'norm', 'n']:
+		if sp in ['normal', 'norm', 'n']:
 			sp = 'normal'
-			cmdMsg = 'NORMAL'
+			cmdMsg = '0'
 		elif sp in ['single', 'sing', 's']:
 			sp = 'single'
-			cmdMsg = 'SINGLE'
+			cmdMsg = '1'
+		elif sp in ['force', 'f']:
+			sp = 'force'
+			cmdMsg = '2'
+		elif sp in ['disable', 'd']:
+			sp = 'disable'
+			cmdMsg = '3'
 		else:
-			raise ValueError(''.join(('Wrong trigger mode ', str(mode), ', use auto, normal, or single')))
+			raise ValueError(''.join(('Wrong trigger mode ', str(mode), ', use normal, single, force, or disable')))
 		self.lock.acquire()
 		msg = ''.join(('setTriggerMode:', cmdMsg))
 		self.sendReceive(msg)
@@ -211,8 +214,8 @@ class RedPitaya_control(object):
 			return 'NEGATIVE'
 
 	def setRecordLength(self, recLength):
-		if recLength > 12000:
-			recLength = 12000
+		if recLength > 15000:
+			recLength = 15000
 		elif recLength < 1:
 			recLength = 1
 		self.lock.acquire()
@@ -220,12 +223,20 @@ class RedPitaya_control(object):
 		self.sendReceive(msg)
 		self.lock.release()
 		self.redPitayaData.recordLength = recLength
-		self.generateTimevector()
+		self.setTriggerDelayTime(self.redPitayaData.triggerDelayTime)
+		
 
 	def getRecordLength(self):
 		return self.redPitayaData.recordLength
 
 	def setDecimationFactor(self, decFactor):
+		# Base sampling rate 125 MSPS. It is decimated by decimationfactor according to:
+		decDict = {0: 1,
+				   1: 8,
+				   2: 64,
+				   3: 1024,
+				   4: 8192,
+				   5: 16384}
 		if decFactor > 5:
 			decFactor = 5
 		elif decFactor < 0:
@@ -235,22 +246,19 @@ class RedPitaya_control(object):
 		self.sendReceive(msg)
 		self.lock.release()
 		self.redPitayaData.decimationFactor = decFactor
-		self.generateTimevector()
+		self.redPitayaData.sampleRate = 125e6 / decDict[self.redPitayaData.decimationFactor]
+		self.setTriggerDelayTime(self.redPitayaData.triggerDelayTime)
 
 	def getDecimationFactor(self):
 		return self.redPitayaData.decimationFactor
 
 	def generateTimevector(self):
-		# Base sampling rate 125 MSPS. It is decimated by decimationfactor according to:
-		decDict = {0: 1,
-				   1: 8,
-				   2: 64,
-				   3: 1024,
-				   4: 8192,
-				   5: 16384}
-		dt = decDict[self.redPitayaData.decimationFactor] / 125e8
-		self.redPitayaData.sampleRate = 125e8 / decDict[self.redPitayaData.decimationFactor]
-		self.redPitayaData.timevector = np.linspace(0, dt * self.redPitayaData.recordLength, self.redPitayaData.recordLength)
+		
+		dt = 1 / self.redPitayaData.sampleRate
+		minT = self.redPitayaData.triggerDelayTime - self.redPitayaData.recordLength * dt / 2
+		maxT = self.redPitayaData.triggerDelayTime + self.redPitayaData.recordLength * dt / 2		
+		self.redPitayaData.timevector = np.linspace(minT, maxT, self.redPitayaData.recordLength)
+#		self.redPitayaData.timevector = np.linspace(minT, dt * self.redPitayaData.recordLength, self.redPitayaData.recordLength)
 
 	def getTimevector(self):
 		return self.redPitayaData.timevector
@@ -276,14 +284,14 @@ class RedPitaya_control(object):
 		"""Set trigger delay in s 
 		"""
 		self.redPitayaData.triggerDelayTime = trigDelay
-		triggerDelaySamples = self.redPitayaData.recordLength / 2.0 - trigDelay * self.redPitayaData.sampleRate
+		triggerDelaySamples = self.redPitayaData.recordLength / 2.0 + trigDelay * self.redPitayaData.sampleRate
 		if triggerDelaySamples < 0:
 			self.setTriggerDelaySamples(0)
-		elif triggerDelaySamples > self.redPitayaData.recordLength:
-			self.setTriggerDelaySamples(self.redPitayaData.recordLength)
+#		elif triggerDelaySamples > self.redPitayaData.recordLength:
+#			self.setTriggerDelaySamples(self.redPitayaData.recordLength)
 		else:
 			self.setTriggerDelaySamples(triggerDelaySamples)
-		
+		self.generateTimevector()
 
 	def setTriggerDelaySamples(self, trigDelay):
 		print "New trig delay: ", trigDelay, " samples"
@@ -291,7 +299,7 @@ class RedPitaya_control(object):
 			msg = ''.join(('setTriggerDelaySamples:', str(np.int(trigDelay)))) # Trigger delay is in samples
 			self.sendReceive(msg)
 		self.redPitayaData.triggerDelaySamples = trigDelay
-		self.redPitayaData.triggerDelayTime = (self.redPitayaData.recordLength / 2.0 - trigDelay) / self.redPitayaData.sampleRate
+#		self.redPitayaData.triggerDelayTime = (self.redPitayaData.recordLength / 2.0 - trigDelay) / self.redPitayaData.sampleRate
 		
 	def setTriggerPos(self, trigPos):
 		self.lock.acquire()
@@ -358,7 +366,7 @@ class RedPitaya_control(object):
 				itemsize = self.redPitayaData.waveformDatatype().itemsize
 				readLength = np.int(np.fromstring(sig1[0:itemsize], dtype=self.redPitayaData.waveformDatatype))
 #				print "getWaveform:0 expected read length ", readLength 
-				trigCounter = np.int(np.fromstring(sig1[itemsize:2 * itemsize], dtype=self.redPitayaData.waveformDatatype))
+				trigCounter1 = np.int(np.fromstring(sig1[itemsize:2 * itemsize], dtype=self.redPitayaData.waveformDatatype))
 				while len(sig1) < (readLength + 2) * itemsize:
 	#				print ''.join(("getWaveform:0 returned ", str(len(sig1)), ' bytes')) 
 					try:
@@ -373,19 +381,13 @@ class RedPitaya_control(object):
 						return False
 					if len(sig1) < (readLength + 2) * itemsize:
 						time.sleep(0.00005)
-				if self.redPitayaData.waveformDatatype == np.int16:
-					print "getWaveformFloat:0... Rescaling data"
-					self.redPitayaData.waveform1 = self.redPitayaData.adcFactor_ch1 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch1)
-				else:
-					self.redPitayaData.waveform1 = np.fromstring(sig1[2 * itemsize:], dtype=self.redPitayaData.waveformDatatype)
-					self.redPitayaData.triggerCounter1 = trigCounter
 					
 				sig2 = self.sendReceive('getWaveformFloat:1')
 				retries = 1
 				itemsize = self.redPitayaData.waveformDatatype().itemsize
 				readLength = np.int(np.fromstring(sig2[0:itemsize], dtype=self.redPitayaData.waveformDatatype))
 #				print "getWaveform:1 expected read length ", readLength 
-				trigCounter = np.int(np.fromstring(sig2[itemsize:2 * itemsize], dtype=self.redPitayaData.waveformDatatype))
+				trigCounter2 = np.int(np.fromstring(sig2[itemsize:2 * itemsize], dtype=self.redPitayaData.waveformDatatype))
 				while len(sig2) < (readLength + 2) * itemsize:
 	#				print ''.join(("getWaveform:1 returned ", str(len(sig1)), ' bytes')) 
 					try:
@@ -400,13 +402,22 @@ class RedPitaya_control(object):
 						return False
 					if len(sig2) < (readLength + 2) * itemsize:
 						time.sleep(0.00005)
-				if self.redPitayaData.waveformDatatype == np.int16:
-					print "getWaveformFloat:1... Rescaling data"
-					self.redPitayaData.waveform2 = self.redPitayaData.adcFactor_ch2 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch2)
+				if trigCounter1 == trigCounter2:
+					if self.redPitayaData.waveformDatatype == np.int16:
+						print "getWaveformFloat:0... Rescaling data"
+						self.redPitayaData.waveform1 = self.redPitayaData.adcFactor_ch1 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch1)
+					else:
+						self.redPitayaData.waveform1 = np.fromstring(sig1[2 * itemsize:], dtype=self.redPitayaData.waveformDatatype)
+						self.redPitayaData.triggerCounter1 = trigCounter1
+	
+					if self.redPitayaData.waveformDatatype == np.int16:
+						print "getWaveformFloat:1... Rescaling data"
+						self.redPitayaData.waveform2 = self.redPitayaData.adcFactor_ch2 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch2)
+					else:
+						self.redPitayaData.waveform2 = np.fromstring(sig2[2 * itemsize:], dtype=self.redPitayaData.waveformDatatype)
+						self.redPitayaData.triggerCounter2 = trigCounter2
 				else:
-					self.redPitayaData.waveform2 = np.fromstring(sig2[2 * itemsize:], dtype=self.redPitayaData.waveformDatatype)
-					self.redPitayaData.triggerCounter2 = trigCounter
-									
+					print "Triggers not synchronized"
 				t = time.time()
 				dt = t - self.t0
 				self.dtArray[self.dtIndex % self.dtSize] = dt
