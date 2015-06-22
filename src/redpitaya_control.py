@@ -360,6 +360,64 @@ class RedPitaya_control(object):
 
 	def updateWaveforms(self):
 		with self.lock:
+			sig1 = self.sendReceive('getWaveformsFloat')
+			if sig1 != 'not triggered':
+				retries = 1
+				itemsize = self.redPitayaData.waveformDatatype().itemsize
+				readLength = np.int(np.fromstring(sig1[0:itemsize], dtype=self.redPitayaData.waveformDatatype))
+#				print "getWaveform:0 expected read length ", readLength 
+				trigCounter1 = np.int(np.fromstring(sig1[itemsize:2 * itemsize], dtype=self.redPitayaData.waveformDatatype))
+				while len(sig1) < (readLength + 2) * itemsize * 2:
+	#				print ''.join(("getWaveform:0 returned ", str(len(sig1)), ' bytes')) 
+					try:
+						extradata = self.sock.recv(70000)
+					except socket.timeout:
+						print "getWaveformFloat:0... Receive timeout"
+						return False
+					sig1 = ''.join((sig1, extradata))
+					retries += 1
+					if retries > 100:
+						print "getWaveformFloat:0... Retries exceeded"
+						return False
+					if len(sig1) < (readLength + 2) * itemsize:
+						time.sleep(0.00005)
+					
+				sig2 = sig1[(readLength + 2) * itemsize:]
+				trigCounter2 = np.int(np.fromstring(sig2[itemsize:2 * itemsize], dtype=self.redPitayaData.waveformDatatype))
+				if trigCounter1 == trigCounter2:
+#				if True:
+					if self.redPitayaData.waveformDatatype == np.int16:
+						print "getWaveformFloat:0... Rescaling data"
+						self.redPitayaData.waveform1 = self.redPitayaData.adcFactor_ch1 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch1)
+					else:
+						self.redPitayaData.waveform1 = np.fromstring(sig1[2 * itemsize : (readLength + 2) * itemsize], dtype=self.redPitayaData.waveformDatatype)
+						self.redPitayaData.triggerCounter1 = trigCounter1
+	
+					if self.redPitayaData.waveformDatatype == np.int16:
+						print "getWaveformFloat:1... Rescaling data"
+						self.redPitayaData.waveform2 = self.redPitayaData.adcFactor_ch2 * (np.fromstring(sig1[self.redPitayaData.waveformDatatype().itemsize:], dtype=self.redPitayaData.waveformDatatype) - self.redPitayaData.dcOffset_ch2)
+					else:
+						self.redPitayaData.waveform2 = np.fromstring(sig2[2 * itemsize:], dtype=self.redPitayaData.waveformDatatype)
+						self.redPitayaData.triggerCounter2 = trigCounter2
+				else:
+					print "Triggers not synchronized:", trigCounter1, trigCounter2
+				t = time.time()
+				dt = t - self.t0
+				self.dtArray[self.dtIndex % self.dtSize] = dt
+				if self.dtIndex > self.dtSize:
+					self.redPitayaData.fps = 1 / self.dtArray.mean()
+				else:
+					self.redPitayaData.fps = 1 / self.dtArray[0:self.dtIndex]
+				self.t0 = t
+				self.dtIndex += 1
+		if sig1 == 'not triggered':
+#			print "Not triggered"
+			return False
+		else:
+			return True
+
+	def updateWaveformsSingle(self):
+		with self.lock:
 			sig1 = self.sendReceive('getWaveformFloat:0')
 			if sig1 != 'not triggered':
 				retries = 1
