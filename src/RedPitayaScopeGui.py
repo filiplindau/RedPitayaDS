@@ -51,7 +51,15 @@ class RedPitayaGui(QtGui.QWidget):
         self.trigEdgeCombobox.addItem("Positive")
         self.trigEdgeCombobox.addItem("Negative")
         self.trigEdgeCombobox.activated.connect(self.setTrigEdge)
+        self.genOutEnableButton = QtGui.QPushButton('Enable')
+        self.genOutEnableButton.pressed.connect(self.genOutEnable)
+        self.genFreqSpinboxCh1 = QtGui.QDoubleSpinBox()
+        self.genFreqSpinboxCh1.setMaximum(2e7)
+        self.genFreqSpinboxCh1.setMinimum(0)
+        self.genFreqSpinboxCh1.setValue(1000.0)
+        self.genFreqSpinboxCh1.editingFinished.connect(self.setGenFrequencyCh1)
         self.fpsLabel = QtGui.QLabel()
+        self.trigCounterLabel = QtGui.QLabel()
         
         self.gridLayout.addWidget(QtGui.QLabel("Record length"), 0, 0)
         self.gridLayout.addWidget(self.recordSpinbox, 0, 1)
@@ -65,8 +73,15 @@ class RedPitayaGui(QtGui.QWidget):
         self.gridLayout.addWidget(self.trigSourceCombobox, 4, 1)
         self.gridLayout.addWidget(QtGui.QLabel("Trigger edge"), 5, 0)
         self.gridLayout.addWidget(self.trigEdgeCombobox, 5, 1)
-        self.gridLayout.addWidget(QtGui.QLabel("FPS"), 6, 0)
-        self.gridLayout.addWidget(self.fpsLabel, 6, 1)
+        self.gridLayout.addWidget(QtGui.QLabel("Generator enable"), 6, 0)
+        self.gridLayout.addWidget(self.genOutEnableButton, 6, 1)
+        self.gridLayout.addWidget(QtGui.QLabel("Generator Ch1 Freq"), 7, 0)
+        self.gridLayout.addWidget(self.genFreqSpinboxCh1, 7, 1)
+        
+        self.gridLayout.addWidget(QtGui.QLabel("FPS"), 8, 0)
+        self.gridLayout.addWidget(self.fpsLabel, 8, 1)
+        self.gridLayout.addWidget(QtGui.QLabel("Trig counter"), 9, 0)
+        self.gridLayout.addWidget(self.trigCounterLabel, 9, 1)
         
         self.plotWidget = pq.PlotWidget(useOpenGL=True)
         self.plot1 = self.plotWidget.plot()
@@ -80,7 +95,8 @@ class RedPitayaGui(QtGui.QWidget):
         self.layout.addWidget(self.plotWidget)
                 
         print 'Connecting...'
-        self.rpc = rp.RedPitaya_control('130.235.94.53')
+#        self.rpc = rp.RedPitaya_control('130.235.94.53')
+        self.rpc = rp.RedPitaya_control('192.168.1.200')
 #        self.sock = socket.socket()
 #        print 'Socket created'
 #        self.sock.connect(('130.235.94.53', 8888))
@@ -132,7 +148,7 @@ class RedPitayaGui(QtGui.QWidget):
         edgeList = ['pe', 'ne']
         self.lock.acquire()
         edgeIndex = self.trigEdgeCombobox.currentIndex()
-        self.rpc.setTriggerSourceExplicit(sourceList[index], edgeList[edgeIndex])
+        self.rpc.setTriggerSourceEdge(sourceList[index], edgeList[edgeIndex])
         self.lock.release()        
 
     def setTrigMode(self, index):
@@ -146,15 +162,24 @@ class RedPitayaGui(QtGui.QWidget):
         sourceList = ['CH1', 'CH2', 'EXT']
         self.lock.acquire()
         sourceIndex = self.trigSourceCombobox.currentIndex()
-        self.rpc.setTriggerSourceExplicit(sourceList[sourceIndex], edgeList[index])
-        self.lock.release()        
+        self.rpc.setTriggerSourceEdge(sourceList[sourceIndex], edgeList[index])
+        self.lock.release()     
+        
+    def genOutEnable(self):
+        with self.lock:
+            self.rpc.setGenOutEnable(1)
+            
+    def setGenFrequencyCh1(self):
+        with self.lock:
+            self.rpc.setGenFrequency(1, self.genFreqSpinboxCh1.value())
             
     def updateAction(self):
         # Update world here
-        self.lock.acquire()
-        self.rpc.updateWaveforms()
-        data = self.rpc.getWaveform(1)
-        self.lock.release()
+        with self.lock:
+            self.rpc.updateWaveforms()
+            data = self.rpc.getWaveform(1)
+            trigCounter = self.rpc.getTriggerCounter(1)
+            self.trigCounterLabel.setText("{:d}".format(trigCounter))
         self.plot1.setData(y=data)
         t = time.time()
         self.t0 = np.hstack((self.t0[1:], t))
