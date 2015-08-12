@@ -182,11 +182,15 @@ class RedPitaya_control(object):
 		elif sp in ['force', 'f']:
 			sp = 'force'
 			cmdMsg = '2'
+		elif sp in ['auto', 'a']:
+			sp = 'auto'
+			# cmd=2 to force a trig immediately
+			cmdMsg = '2'
 		elif sp in ['disable', 'd']:
 			sp = 'disable'
 			cmdMsg = '3'
 		else:
-			raise ValueError(''.join(('Wrong trigger mode ', str(mode), ', use normal, single, force, or disable')))
+			raise ValueError(''.join(('Wrong trigger mode ', str(mode), ', use normal, single, force, auto, or disable')))
 		self.lock.acquire()
 		msg = ''.join(('setTriggerMode:', cmdMsg))
 		self.sendReceive(msg)

@@ -426,6 +426,11 @@ class RedPitayaDS(PyTango.Device_4Impl):
 					newWaveformTimestamp = time.time()
 					# Check if we got a fresh trig event:
 					if triggerStatus == False:
+						if self.redPitayaData.triggerMode == 'auto':
+							if newWaveformTimestamp - oldWaveformTimestamp > 0.05:
+								# 20 Hz trig rate if no 
+								self.info_stream('Forcing trig')
+								self.oscilloscope.setTriggerMode('auto')
 						# No, so check if the delay is long (>0.3 s), then flag it as waiting for trigger
 						if newWaveformTimestamp - oldWaveformTimestamp > 0.3:
 							self.redPitayaData.triggerWait = True
